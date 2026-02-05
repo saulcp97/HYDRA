@@ -40,18 +40,38 @@ EPOCH_NUM = 10
 coalition_index1_Classes = [0,1,2,3,4]
 coalition_index2_Classes = [5,6,7,8,9]
 
-
 #   Network Structures (10 miembros)
 # Coalition properties
 # 2 coalitions 5 members each coalition
 n_coalitons = 2
 coalition_probability = 0.8 # 0.8  # -1: ACoL; >0: ACoaL
 DINAMIC_COALITIONS = True
-SIMILARITY_MEASURE = "COSINE_SIMILARITY"
+SIMILARITY_MEASURE = "EUCLIDEAN_DISTANCE"
+#Only for Jaccard
+EPSILON = 0.1
 DEFAULT_SIMILARITY = -1
 coalitions = [["0", "1", "2", "3", "4"], ["5", "6", "7", "8", "9"]]
 
-experiment_name = "acoal_full_100_Dinam"
+#IID or Non-IID configuration variables
+IID = False
+#Agente 0 - 9 par recibe [0,1,2,3,4] y el otro [5,6,7,8,9]
+iid_distribution = [
+    [0, 1, 2, 3, 4], # Agente 0
+    [5, 6, 7, 8, 9], # Agente 1
+    [0, 1, 2, 3, 4], # Agente 2
+    [5, 6, 7, 8, 9], # Agente 3
+    [0, 1, 2, 3, 4], # Agente 4
+    [5, 6, 7, 8, 9], # Agente 5
+    [0, 1, 2, 3, 4], # Agente 6
+    [5, 6, 7, 8, 9], # Agente 7
+    [0, 1, 2, 3, 4], # Agente 8
+    [5, 6, 7, 8, 9], # Agente 9
+]
+
+#
+
+experiment_name = "lossLandscape_10agents_10epochs_nonIID"
+log_Experiment = True
 PREFIX = "scp_"
 
 AGENT_NICKNAMES = {}

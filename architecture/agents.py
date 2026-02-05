@@ -1,32 +1,18 @@
-#Mesa
-
-# Has multi-dimensional arrays and matrices.
-# Has a large collection of mathematical functions to operate on these arrays.
-import numpy as np
-
-# Data manipulation and analysis.
-import pandas as pd
-
-# Data visualization tools.
-import seaborn as sns
-
 import mesa
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import random_split
 from torchvision import datasets, transforms
-
+from torch.utils.data import random_split
 import utils.Similarities as Similarities
 
-from utils.plotting import plot_MDS_Points
+from architecture.dataLoader import get_data_loaders
+
+import os
+import Config
 
 import random
-
-
-import Config
 
 use_accel = torch.accelerator.is_available()
 
@@ -38,12 +24,15 @@ else:
 
 
 def rateSimilarity(A, B):
+    return Similarities.applySimilarity(A, B, Config.SIMILARITY_MEASURE)
+    """
+    DEPRECATED FUNCTION
     #Similarity Normalization
     dA, dB = Similarities.applyNormalization(A, B)
     #Introduce the switch to read from config the similarity measure to use.
     euclideanDistance = Similarities.euclideanDistance(dA, dB).item()
     return euclideanDistance
-
+    """
 
 #Implementación de FLaMAS (Average)
 def average_weights(A, B, eps = 0.5):
@@ -81,18 +70,6 @@ class Net(nn.Module):
         output = F.log_softmax(x, dim=1)
         return output
 
-transform=transforms.Compose([
-transforms.ToTensor(),
-transforms.Normalize((0.1307,), (0.3081,))
-])
-
-
-data_set = datasets.MNIST('../data', train=True, download=True, transform=transform)
-train_len = int(len(data_set)*0.9)
-#Test set isnt used at the moment
-train_set, test_set = random_split(data_set, [train_len, len(data_set)- train_len])
-
-#train_loader = torch.utils.data.DataLoader(dataset1, 8, False)
 
 originalWeights = Net().to(device).state_dict()
 
@@ -107,10 +84,7 @@ class nnAgent(mesa.Agent):
         self.nnModel.load_state_dict(originalWeights)
         self.inWeightBuffer = []
 
-        self.dataset = torch.utils.data.DataLoader(train_set, 512, False)
-        self.optimizer = optim.Adadelta(self.nnModel.parameters(), lr=0.5)
-
-        self.selfID = self.unique_id -1
+        self.selfID = self.unique_id-1
         self.agent_name = "scp_" + str(self.selfID)
 
         #Only used for the random weight changes
@@ -126,6 +100,10 @@ class nnAgent(mesa.Agent):
         self.neighbor_info = {}
         self.coallitionNeighbors = None
         self.neighborhood = None
+
+        self.dataset, _ = get_data_loaders(self)
+        #torch.utils.data.DataLoader(train_set, 512, False)
+        self.optimizer = optim.Adadelta(self.nnModel.parameters(), lr=0.5)
 
 
     def calibrateNeihborhood(self):
@@ -156,20 +134,49 @@ class nnAgent(mesa.Agent):
 
     def train_model(self):
         self.nnModel.train()
+        localLoss = 0
         for batch_idx, (data, target) in enumerate(self.dataset):
             data, target = data.to(device), target.to(device)
+            self.optimizer.zero_grad()
             output = self.nnModel(data)
             loss = F.nll_loss(output, target)
             loss.backward()
             self.optimizer.step()
+            localLoss += loss.item()
             if batch_idx % 100 == 0:
                 print('Train Iteration of agent {}: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                     self.unique_id,
                     batch_idx * len(data), len(self.dataset.dataset),
                     100. * batch_idx / len(self.dataset), loss.item()))
+        
+        #Now check the experiment and logger
+        if Config.log_Experiment:
+            #Save on the output folder the weights and loss of the agent this epoch.
+            #Check if the experiment folder exists and if not create it
+            if not os.path.exists("outputs\\" + Config.experiment_name):
+                os.makedirs("outputs\\" + Config.experiment_name)
 
+            #Check if the agent folder exists and if not create it
+            if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name):
+                os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name)
+
+            #Now do the same for the iteration folder inside the agent folder
+            iteration = self.model.epoch
+            if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration)):
+                os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration))
+
+            torch.save(self.nnModel.state_dict(), "outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\weights.pth")
+            with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\loss.txt", "w") as f:
+                f.write(str(localLoss))
+
+            #Save also the coalition index of the agent this iteration
+            with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\coalition.txt", "w") as f:
+                f.write(str(self.coalitionIndex))
 
     def checkSelfCoalition(self):
+        #Check if the neighbor info is empty, if it is, we dont change the coalition because we dont have any information to change it
+        if len(self.neighbor_info) == 0:
+            print(f"Agent {self.agent_name} - No se ha recibido información de vecinos, manteniendo coalición actual: {self.coalitionIndex}")
         aux = [(self.neighbor_info[k][0], k, self.neighbor_info[k][1]) for k in self.neighbor_info.keys()]
         aux.sort()
         #Half is the braket in this case
@@ -200,6 +207,10 @@ class nnAgent(mesa.Agent):
         self.coalitionIndex = most_frequent_id
 
     def pass_weights(self):
+        #print(self.agent_name + " - Vecinos: " + str(len(self.neighbors)) + " - Vecinos de coalición: " + str(len(self.coallitionNeighbors)))
+        #print(self.neighbor_info)
+
+
         #First of all decide what coallition the agent it is:
         self.checkSelfCoalition()
         #Now the real pass weights
@@ -212,78 +223,3 @@ class nnAgent(mesa.Agent):
         
         if other_agent is not None:
             other_agent.receiveWeight((self.agent_name, self.nnModel.state_dict(), self.coalitionIndex))
-
-class FederatedModel(mesa.Model):
-    """A model with some number of agents."""
-
-    def __init__(self, n=10, seed=None):
-        super().__init__(seed=seed)
-        self.num_agents = n
-        # Create agents
-        nnAgent.create_agents(model=self, n=n)
-
-        self.neighbors = {}
-        for teAgent in Config.NEIGHBOURS.keys():
-            #teAgent: teory or graph ag
-            self.neighbors[teAgent] = []
-            for teoAgent in Config.NEIGHBOURS[teAgent]:
-                acAgent = [ac for ac in self.agents if ac.agent_name == teoAgent][0]
-                self.neighbors[teAgent].append([acAgent.agent_name, acAgent, acAgent.coalitionIndex])
-                #format agent unofficial name, direccion, variable auxiliar distancia, del agente para poder comunicarse
-
-            #teAgent: teory or graph agent, not a real one
-            #accAgent = [ac for ac in self.agents if ac.agent_name == teAgent][0]
-            #Actual Agent, solo debería haber uno almenos que la cosa haya explotado pero por si a caso
-            #podemos pasarle con accAgent.neighbors = self.neighbors[teAgent] una copia la lista de vecinos que tiene para que la mantenga
-            #pero si lo dejamos como un servicio que l 
-        for ac in self.agents:
-           print(ac.agent_name) 
-
-        self.epoch = 0
-
-    def step(self):
-        """Advance the model by one step."""
-        # This function psuedo-randomly reorders the list of agent objects and
-        # then iterates through calling the function passed in as the parameter
-
-        #Can use either do or shuffle do because we separated the steps to do in 3 states so they dont have priority order
-        if self.epoch == 0:
-            self.agents.do("calibrateNeihborhood")
-        else:
-            self.agents.do("mixing_Weights")
-        self.agents.shuffle_do("train_model")
-        self.agents.shuffle_do("pass_weights")
-
-        self.epoch += 1
-
-
-if __name__ == "__main__":
-    print("Experiment simple connection")
-
-    starter_model = FederatedModel(len(Config.AGENT_NAMES))
-
-    print("Ammount of agents: ", len(starter_model.agents))
-    
-    for epoch in range(Config.EPOCH_NUM):
-        starter_model.step()
-
-    #Calculate euclidian distance matrixç
-    distancias = []
-    for x in starter_model.agents:
-        distancias.append([])
-        A = x.nnModel.state_dict()
-        for y in starter_model.agents:
-            B = y.nnModel.state_dict()
-            sim = 0
-            for e in list(A.keys()):
-                if len(A[e].shape) > 1: #Esto elimina el Bias
-                    sim += Similarities.euclideanDistance(A[e], B[e]).item()
-
-            distancias[-1].append(sim)
-
-    mis_colores = [
-        'red', 'blue', 'green', 'orange', 'purple', 
-        'brown', 'pink', 'gray', 'olive', 'cyan'
-    ]
-
-    plot_MDS_Points(distancias, mis_colores)

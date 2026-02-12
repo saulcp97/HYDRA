@@ -3,6 +3,7 @@
 
 # federated model, the visualization app doesnt import the agent's code.
 
+from platform import node
 import matplotlib.pyplot as plt
 
 from matplotlib.figure import Figure
@@ -43,29 +44,30 @@ def plot_network(model):
     #TODO plot the network of agents
     update_counter.get()
     #g = model.network
-    g = nx.read_graphml(Config.network_graph)
+
+    g = Config.H
     
     pos = nx.spring_layout(g, seed=3113794652) 
     fig = Figure()
     ax = fig.subplots()
-    labels = {str(agent.selfID): agent.agent_name for agent in model.agents}
+    labels = {agent.selfID: agent.agent_name for agent in model.agents}
 
-    #node_sizes = [g.nodes[node]["size"] for node in g.nodes]
-    #node_colors = [g.nodes[node]["size"] for node in g.nodes()]
-
-    #Node Colors, depends on the actual coalition index of the agent.
-    node_colors = []
+    #we convert the undirected graph to a directed one, so we can have different colors for the edges in each direction, to represent the communication between agents.
+    g = g.to_directed()
+    coallition_edges = []
+    #We check the coalition list of each agent and color the edges accordingly.
     for node in g.nodes():
-        agent_name = "scp_" + node
-        agent = [ag for ag in model.agents if ag.agent_name == agent_name][0]
-        if agent.coalitionIndex == 0:
-            node_colors.append("blue")
-        elif agent.coalitionIndex == 1:
-            node_colors.append("red")
-        else:
-            node_colors.append("gray") #Default color for agents that are not in any coalition, shouldnt happen but just in case
-
-    nx.draw(g, pos=pos, labels=labels, ax = ax, node_color=node_colors)
+        agent_name = "scp_" + str(node)
+        agent = [agent for agent in model.agents if agent.agent_name == agent_name][0]
+        coalition = agent.coallitionNeighbors
+        print(coalition)
+        print(f"Agent {agent_name} is in coalition with {[name for name, _ in coalition]}")
+        for neighbor_name, neighbor_agent in coalition:
+            coallition_edges.append((node, neighbor_name))
+    #print(labels)
+    print(pos)
+    edge_colors = ['red' if (u, v) in coallition_edges else 'gray' for u, v in g.edges()]       
+    nx.draw(g, pos=pos, labels=labels, ax = ax, node_color="gray", arrows=True, with_labels=True, edge_color=edge_colors)
     
     """
     nx.draw(
@@ -89,7 +91,7 @@ def loss_horizon_evolution(model):
     #Try the plot multiContourPlot in a dynamic way.
     pass
 
-model = model.FederatedModel(n=10, seed=42)
+model = model.FederatedModel(n=Config.NUMBER_OF_AGENTS, seed=42)
 page = SolaraViz(
     model,
     components=[plot_network, loss_horizon_evolution],

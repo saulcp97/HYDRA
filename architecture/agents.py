@@ -11,7 +11,7 @@ from architecture.dataLoader import get_data_loaders
 
 import os
 import Config
-
+import numpy as np
 import random
 
 use_accel = torch.accelerator.is_available()
@@ -22,17 +22,8 @@ if use_accel:
 else:
     device = torch.device("cpu")
 
-
 def rateSimilarity(A, B):
     return Similarities.applySimilarity(A, B, Config.SIMILARITY_MEASURE)
-    """
-    DEPRECATED FUNCTION
-    #Similarity Normalization
-    dA, dB = Similarities.applyNormalization(A, B)
-    #Introduce the switch to read from config the similarity measure to use.
-    euclideanDistance = Similarities.euclideanDistance(dA, dB).item()
-    return euclideanDistance
-    """
 
 #Implementación de FLaMAS (Average)
 def average_weights(A, B, eps = 0.5):
@@ -45,32 +36,8 @@ def average_weights(A, B, eps = 0.5):
     print("Pesos influenciados")
     return average_weights
 
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3, 1)
-        self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.dropout1 = nn.Dropout(0.25)
-        self.dropout2 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(9216, 128)
-        self.fc2 = nn.Linear(128, 10)
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = F.relu(x)
-        x = self.conv2(x)
-        x = F.relu(x)
-        x = F.max_pool2d(x, 2)
-        x = self.dropout1(x)
-        x = torch.flatten(x, 1)
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = self.dropout2(x)
-        x = self.fc2(x)
-        output = F.log_softmax(x, dim=1)
-        return output
-
-
+from architecture.neuralNetwork import Net
 originalWeights = Net().to(device).state_dict()
 
 class nnAgent(mesa.Agent):
@@ -80,8 +47,21 @@ class nnAgent(mesa.Agent):
         # Pass the parameters to the parent class.
         super().__init__(model)
 
-        self.nnModel:nn.Module = Net().to(device)
-        self.nnModel.load_state_dict(originalWeights)
+        if Config.SIMULATION_MODE:
+            #To ensure the same random weights for all the agents, we can use the unique_id as a seed for the random generator.
+            np.random.seed(Config.SIMULATION_SEED)
+            self.nnModel = np.random.rand(Config.VECTOR_DIMENSION)
+            #Dataset is not a real dataset, but the random target vector that the agent will try to reach with its weights.
+            self.dataset = self.nnModel + np.random.rand(Config.VECTOR_DIMENSION) * (Config.EPOCH_NUM/Config.VECTOR_DIMENSION)
+            self.optimizer = None
+        else:
+            self.nnModel = Net().to(device)
+            self.nnModel.load_state_dict(originalWeights)
+        
+            self.dataset, _ = get_data_loaders(self)
+            #torch.utils.data.DataLoader(train_set, 512, False)
+            self.optimizer = optim.Adadelta(self.nnModel.parameters(), lr=0.5)
+        
         self.inWeightBuffer = []
 
         self.selfID = self.unique_id-1
@@ -90,64 +70,75 @@ class nnAgent(mesa.Agent):
         #Only used for the random weight changes
         self.neighbors = None
 
-        #Time to load the initial coalitions
-        self.coalitionIndex = -1
-        for idx, coalition in enumerate(Config.coalitions):
-            if str(self.selfID) in coalition:
-                self.coalitionIndex = idx
-                break
         #In theory we know before hand the coalition of all the indexes, but we do it on the first iteration to have acces t
         self.neighbor_info = {}
-        self.coallitionNeighbors = None
+        self.coallitionNeighbors = []
         self.neighborhood = None
 
-        self.dataset, _ = get_data_loaders(self)
-        #torch.utils.data.DataLoader(train_set, 512, False)
-        self.optimizer = optim.Adadelta(self.nnModel.parameters(), lr=0.5)
-
+        self.averageSimilarity = -1
 
     def calibrateNeihborhood(self):
         #IN the first iteration the values 
         self.neighborhood = self.model.neighbors[self.agent_name]
         self.coallitionNeighbors = []
         self.neighbors = []
-        for name, agent, coalition in self.neighborhood:
+        for name, agent in self.neighborhood:
             self.neighbors.append(agent)
-            if self.coalitionIndex == coalition:
-                self.coallitionNeighbors.append((name, agent))
-            self.neighbor_info[name] = (1 if self.coalitionIndex == coalition else 100, coalition)
+            self.coallitionNeighbors.append((name, agent))
+            self.neighbor_info[name] = (-1)
+
+        #Now calibrate the coa
 
     def receiveWeight(self, input):
         self.inWeightBuffer.append(input)
 
     def mixing_Weights(self):
-        #while inWeightBuffer > 0 pop 
+        #while inWeightBuffer > 0 pop
+
         while len(self.inWeightBuffer) > 0:
             aux = self.inWeightBuffer.pop(0)
+            if Config.SIMULATION_MODE:
+                similarity = rateSimilarity(aux[1], self.nnModel)
+                self.neighbor_info[aux[0]] = (similarity)
+                #We dont need the averaage weights because is just a plain vector.
+                epsilon = 1/len(self.neighborhood)
+                self.nnModel = self.nnModel + epsilon*(aux[1] - self.nnModel)
+            else:
+                similarity = rateSimilarity(aux[1], self.nnModel.state_dict())
+                self.neighbor_info[aux[0]] = (similarity)
+                #Epsilon is maximum 1 / number of neighbors.
+                weight = average_weights(aux[1], self.nnModel.state_dict(), eps= 1/len(self.neighborhood))
+                self.nnModel.load_state_dict(weight)
 
-            similarity = rateSimilarity(aux[1], self.nnModel.state_dict())
-
-            self.neighbor_info[aux[0]] = (similarity, aux[2])
-
-            weight = average_weights(aux[1], self.nnModel.state_dict())
-            self.nnModel.load_state_dict(weight)
 
     def train_model(self):
-        self.nnModel.train()
         localLoss = 0
-        for batch_idx, (data, target) in enumerate(self.dataset):
-            data, target = data.to(device), target.to(device)
-            self.optimizer.zero_grad()
-            output = self.nnModel(data)
-            loss = F.nll_loss(output, target)
-            loss.backward()
-            self.optimizer.step()
-            localLoss += loss.item()
-            if batch_idx % 100 == 0:
-                print('Train Iteration of agent {}: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    self.unique_id,
-                    batch_idx * len(data), len(self.dataset.dataset),
-                    100. * batch_idx / len(self.dataset), loss.item()))
+
+        if Config.SIMULATION_MODE:
+            random_noise = np.random.rand(Config.VECTOR_DIMENSION) * Config.RANDOMNESS_SCALE
+            
+            movement = self.dataset - self.nnModel + random_noise
+            normalizedMove = movement / np.linalg.norm(movement)
+
+            self.nnModel += normalizedMove
+
+            #Euclidean distance as a loss.
+            localLoss = np.linalg.norm(self.dataset - self.nnModel)
+        else:
+            self.nnModel.train()
+            for batch_idx, (data, target) in enumerate(self.dataset):
+                data, target = data.to(device), target.to(device)
+                self.optimizer.zero_grad()
+                output = self.nnModel(data)
+                loss = F.nll_loss(output, target)
+                loss.backward()
+                self.optimizer.step()
+                localLoss += loss.item()
+                if batch_idx % 100 == 0:
+                    print('Train Iteration of agent {}: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                        self.unique_id,
+                        batch_idx * len(data), len(self.dataset.dataset),
+                        100. * batch_idx / len(self.dataset), loss.item()))
         
         #Now check the experiment and logger
         if Config.log_Experiment:
@@ -165,61 +156,62 @@ class nnAgent(mesa.Agent):
             if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration)):
                 os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration))
 
-            torch.save(self.nnModel.state_dict(), "outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\weights.pth")
+            if Config.SIMULATION_MODE:
+                #TODO change it to a pandas
+                #Now Save the vector of the agent as a .npy file np.save
+                with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\weights.npy", "wb") as f:
+                    np.save(f, self.nnModel)
+            else:
+                torch.save(self.nnModel.state_dict(), "outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\weights.pth")
+            
             with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\loss.txt", "w") as f:
                 f.write(str(localLoss))
 
-            #Save also the coalition index of the agent this iteration
+            #Save also the coalition members of the agent this iteration
             with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\coalition.txt", "w") as f:
-                f.write(str(self.coalitionIndex))
+                result = "Coalition members: \n"
+                for name, _ in self.coallitionNeighbors:
+                    result += name + "\n"
+                #Add the self.averageSimilarity to the log for analysis
+                result += "Average Similarity: " + str(self.averageSimilarity) + "\n"
+                f.write(result)
 
     def checkSelfCoalition(self):
-        #Check if the neighbor info is empty, if it is, we dont change the coalition because we dont have any information to change it
-        if len(self.neighbor_info) == 0:
-            print(f"Agent {self.agent_name} - No se ha recibido información de vecinos, manteniendo coalición actual: {self.coalitionIndex}")
-        aux = [(self.neighbor_info[k][0], k, self.neighbor_info[k][1]) for k in self.neighbor_info.keys()]
-        aux.sort()
-        #Half is the braket in this case
-        aux = aux[:int(len(aux)/2)]
+        #We check first of all if the neighbors similarity have been updated, if not we do not update the coalition
+        if -1 in self.neighbor_info.values():
+            return
+        #We calculate the average similarity of the neighbors and if the influence of the neighbors is greater than the threshold we update the coalition excluding it.
+        #That case only works if the distance is greater, because a distance 0 would be technically ideal.
+        #self.averageSimilarity = sum(self.neighbor_info.values())/len(self.neighbor_info)
+        self.averageSimilarity = sum([similarity for name, similarity in self.neighbor_info.items() if name in [n[0] for n in self.coallitionNeighbors]])/len(self.coallitionNeighbors)
 
-        max_freq = -1
-        most_frequent_id = self.coalitionIndex
-
-        counts = {}
-        for item in aux:
-            c_id = item[2] # El coalition_id es el tercer elemento
-            if c_id in counts:
-                counts[c_id] += 1
+        #Now we loop through the neighbors and see, all who are lower are automatically included. Anything above 1.5 times excluded, that value is on Config.threshold, but we can change it to be more or less strict.
+        new_coalition = []
+        for name, similarity in self.neighbor_info.items():
+            #We check what type of measure we are using.
+            if Config.IS_SIMILARITY:
+                if similarity > self.averageSimilarity * Config.threshold_similarity:
+                    new_coalition.append(name)
             else:
-                counts[c_id] = 1
-
-        for c_id in counts:
-            if counts[c_id] > max_freq:
-                max_freq = counts[c_id]
-                most_frequent_id = c_id
-
-        if most_frequent_id != self.coalitionIndex:
-            self.coallitionNeighbors = []
-            for name, agent, _ in self.neighborhood:
-                if self.neighbor_info[name][1] == self.coalitionIndex:
-                    self.coallitionNeighbors.append((name, agent))
-
-        self.coalitionIndex = most_frequent_id
+                if similarity < self.averageSimilarity * Config.threshold_similarity:
+                    new_coalition.append(name)
+        self.coallitionNeighbors = [(name, agent) for name, agent in self.coallitionNeighbors if name in new_coalition]
 
     def pass_weights(self):
-        #print(self.agent_name + " - Vecinos: " + str(len(self.neighbors)) + " - Vecinos de coalición: " + str(len(self.coallitionNeighbors)))
-        #print(self.neighbor_info)
-
-
         #First of all decide what coallition the agent it is:
         self.checkSelfCoalition()
         #Now the real pass weights
         other_agent:nnAgent = None
-        if random.random() < Config.coalition_probability:
-            other_agent = self.random.choice(self.coallitionNeighbors)[1]
-        else:
-            other_agent:nnAgent = self.random.choice(self.neighbors)
         
+        #Need to precalculate this to avoid choosing as an option if there is no neighbor outside the coalition.
+        electableNeighbors = [agent for agent in self.neighbors if agent not in [n[1] for n in self.coallitionNeighbors]]
+        if random.random() < Config.coalition_probability and len(self.coallitionNeighbors) > 0 or (len(electableNeighbors) == 0 and len(self.coallitionNeighbors) > 0):
+            other_agent = self.random.choice(self.coallitionNeighbors)[1]
+        elif len(self.neighbors) > 0 and len(electableNeighbors) > 0:
+            other_agent:nnAgent = self.random.choice(electableNeighbors)
         
         if other_agent is not None:
-            other_agent.receiveWeight((self.agent_name, self.nnModel.state_dict(), self.coalitionIndex))
+            if Config.SIMULATION_MODE:
+                other_agent.receiveWeight((self.agent_name, self.nnModel))
+            else:
+                other_agent.receiveWeight((self.agent_name, self.nnModel.state_dict()))

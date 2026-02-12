@@ -4,6 +4,11 @@ import matplotlib.pyplot as plt
 import utils.Similarities as Similarities
 
 
+def get_cmap(n, name='hsv'):
+    '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
+    RGB color; the keyword argument name must be a standard mpl colormap name.'''
+    return plt.cm.get_cmap(name, n)
+
 def loadWeights(path_a: str, path_b: str):
     A = torch.load(path_a)
     B = torch.load(path_b)
@@ -134,5 +139,153 @@ def plot_MDS_Points(distanceMatrix, colorList):
     plt.ylabel('Dimensión proyectada 2')
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.show()
+
+
+import Config
+#Do a 3D MDS plot using the 'iteration' variable as the x axis, and y and z are the projected dimensions.
+def plot_MDS_3D():
+    #We prepare the data for the MDS.
+    prefixDir = "outputs/" + Config.experiment_name + "/"
+    hist_list = []
+
+    #For loop for the Config.agent_num agents
+    for agent in range(len(Config.AGENT_NAMES)):
+        auxiliar = []
+        for epoch in range(Config.EPOCH_NUM):
+            path = prefixDir + "scp_" + str(agent) + "/iteration_" + str(epoch) + "/weights.pth"
+            weights = torch.load(path)
+            flat_weights = []
+            for key in weights.keys():
+                flat_weights.extend(weights[key].flatten().tolist())
+            auxiliar.append(flat_weights)
+        hist_list.append(auxiliar)
+
+    all_weights = np.vstack(hist_list)
+
+    #Aplicamos el MDS solamente a las dimensiones de los pesos, sin la iteración.
+    mds = MDS(n_components=2, metric='euclidean', random_state=42)
+
+    mds.fit(all_weights)
+
+    #We create the matplotlib 3D plot.
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
+
+    #We plot the points, using the iteration as the x axis, and the MDS dimensions as y and z.
+    for i in range(len(all_weights)):
+        iteration = i % Config.EPOCH_NUM
+        agent = i // Config.EPOCH_NUM
+
+        #x, y, z = iteration, mds.embedding_[i, 0], mds.embedding_[i, 1]
+
+        ax.scatter(iteration, mds.embedding_[i, 0], mds.embedding_[i, 1], 
+                    color=Config.coalition_Color_Dictionary[agent], s=100, label=f'Agente {agent+1}' if iteration == 0 else "")
+        if iteration == 0:
+            ax.text(iteration, mds.embedding_[i, 0] + 0.05, mds.embedding_[i, 1] + 0.05, f'A{agent+1}')
+    ax.set_title('Evolución de Pesos en el Espacio MDS')
+    ax.set_xlabel('Iteración')
+    ax.set_ylabel('Dimensión MDS 1')
+    ax.set_zlabel('Dimensión MDS 2')
+
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.show()
+
+def plot_PCA_3D():
+    #We prepare the data for the PCA.
+    prefixDir = "outputs/" + Config.experiment_name + "/"
+    hist_list = []
+
+    #For loop for the Config.agent_num agents
+    for agent in range(len(Config.AGENT_NAMES)):
+        auxiliar = []
+        for epoch in range(Config.EPOCH_NUM):
+            path = prefixDir + "scp_" + str(agent) + "/iteration_" + str(epoch) + "/weights.pth"
+            weights = torch.load(path)
+            flat_weights = []
+            for key in weights.keys():
+                flat_weights.extend(weights[key].flatten().tolist())
+            auxiliar.append(flat_weights)
+        hist_list.append(auxiliar)
+
+    all_weights = np.vstack(hist_list)
+
+    #Aplicamos el PCA solamente a las dimensiones de los pesos, sin la iteración.
+    from sklearn.decomposition import PCA
+    pca = PCA(n_components=2)
+    pca.fit(all_weights)
+
+
+    #X_subset_2d = pca.transform(X_subset)
+
+
+    #We create the matplotlib 3D plot.
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
+
+    #We plot the points, using the iteration as the x axis, and the PCA dimensions as y and z.
+    for i in range(len(all_weights)):
+        iteration = i % Config.EPOCH_NUM
+        agent = i // Config.EPOCH_NUM
+
+        ax.scatter(iteration, pca.components_[0][i], pca.components_[1][i], 
+                    color=Config.coalition_Color_Dictionary[agent], s=100, label=f'Agente {agent+1}' if iteration == 0 else "")
+        if iteration == 0:
+            ax.text(iteration, pca.components_[0][i] + 0.05, pca.components_[1][i] + 0.05, f'A{agent+1}')
+    ax.set_title('Evolución de Pesos en el Espacio PCA')
+    ax.set_xlabel('Iteración')
+    ax.set_ylabel('Dimensión PCA 1')
+    ax.set_zlabel('Dimensión PCA 2')
+
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.show()
+
+#Simulation Plot 3D MDS.
+def plot_MDS_3D_Simulation():
+    cmap = get_cmap(len(Config.AGENT_NAMES))
+
+    prefixDir = "outputs/" + Config.experiment_name + "/"
+    hist_list = []
+
+    #For loop for the Config.agent_num agents
+    for agent in range(len(Config.AGENT_NAMES)):
+        auxiliar = []
+        for epoch in range(Config.EPOCH_NUM):
+            path = prefixDir + "scp_" + str(agent) + "/iteration_" + str(epoch) + "/weights.npy"
+            weights = np.load(path)
+            auxiliar.append(weights)
+        hist_list.append(auxiliar)
+        print(f"Agent {agent} loaded.")
+
+    all_weights = np.vstack(hist_list)
+
+    print("All weights loaded, applying MDS...")
+    mds = MDS(n_components=2, metric='euclidean', init='random', random_state=42, n_init=1, max_iter=100)
+    
+    #ONly fit with the last 10% of the iterations, to see the final convergence.
+    last_10_percent = int(len(all_weights) * 0.01)
+    mds.fit(all_weights[-last_10_percent:])
+    print("MDS applied, plotting...")
+
+    #We create the matplotlib 3D plot.
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
+    print("Finalizing plot...")
+    #Do a simple line plot connecting the points of each agent, to see the trajectory.
+    for agent in range(len(Config.AGENT_NAMES)):
+        agent_points = all_weights[agent*Config.EPOCH_NUM:(agent+1)*Config.EPOCH_NUM]
+        agent_mds = mds.fit_transform(agent_points)
+        ax.plot(range(Config.EPOCH_NUM), agent_mds[:, 0], agent_mds[:, 1], c=cmap(agent+1), alpha=0.5)
+
+
+    ax.set_title('Evolución de Pesos en el Espacio MDS')
+    ax.set_xlabel('Iteración')
+    ax.set_ylabel('Dimensión MDS 1')
+    ax.set_zlabel('Dimensión MDS 2')
+
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
     plt.show()

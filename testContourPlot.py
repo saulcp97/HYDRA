@@ -40,7 +40,7 @@ import torch
 
 pesos_history = None  # Simulated weights history (100 epochs, 10 parameters)
 #load the weights history from outputs/baseline/weights and loop for the 100 first epochs to fill the array with the flattened dictionary weights.
-"""
+
 prefixDir = "outputs/baseline/weights/"
 prefixFile = "weight_"
 colorList =[]
@@ -82,14 +82,16 @@ niveles_exactos = [calcular_superficie(p[0], p[1], final_point) for p in pesos_2
 # Los ordenamos de menor a mayor para que plt.contour no se queje
 niveles_exactos = sorted(list(set(niveles_exactos)))
 
-plt.contourf(X, Y, Z, levels=niveles_exactos, cmap=tr, alpha=0.3)
+cm = plt.cm.get_cmap('viridis')
+
+plt.contourf(X, Y, Z, levels=niveles_exactos, cmap=cm, alpha=0.3)
 plt.contour(X, Y, Z, levels=niveles_exactos, colors='black', linewidths=0.5)
 plt.plot(pesos_2d[:, 0], pesos_2d[:, 1], marker=None, linestyle='-') # La trayectoria
 #Scatter all the points with the color list
-plt.scatter(pesos_2d[:, 0], pesos_2d[:, 1], color=colorList, s=50) # Los puntos con colores progresivos
+plt.scatter(pesos_2d[:, 0], pesos_2d[:, 1], color=colorList, s=50, edgecolors='blue', linewidth=2) # Los puntos con colores progresivos
 plt.show()
-"""
 
+"""
 coalition_Color_Dictionary = {
     0: "red",
     1: "blue",
@@ -110,7 +112,7 @@ edge_ColorList = []
 for agent in range(10):
     auxiliar = []
     auxColorList = []
-    for epoch in range(10):
+    for epoch in range(30):
         path = prefixDir + "scp_" + str(agent) + "/iteration_" + str(epoch) + "/weights.pth"
         weights = torch.load(path)
         flat_weights = []
@@ -181,3 +183,4 @@ for i, p in enumerate(proyecciones):
 plt.scatter(punto_inicial[0], punto_inicial[1], c='white', edgecolors='black', s=200, marker='*', label='Inicio Común')
 plt.legend()
 plt.show()
+"""

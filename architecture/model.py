@@ -21,7 +21,7 @@ class FederatedModel(mesa.Model):
             self.neighbors[teAgent] = []
             for teoAgent in Config.NEIGHBOURS[teAgent]:
                 acAgent = [ac for ac in self.agents if ac.agent_name == teoAgent][0]
-                self.neighbors[teAgent].append([acAgent.agent_name, acAgent, acAgent.coalitionIndex])
+                self.neighbors[teAgent].append([acAgent.agent_name, acAgent])
                 #format agent unofficial name, direccion, variable auxiliar distancia, del agente para poder comunicarse
 
             #teAgent: teory or graph agent, not a real one
@@ -47,4 +47,5 @@ class FederatedModel(mesa.Model):
         self.agents.shuffle_do("train_model")
         self.agents.shuffle_do("pass_weights")
 
+        print(f"Epoch {self.epoch} completed.")
         self.epoch += 1

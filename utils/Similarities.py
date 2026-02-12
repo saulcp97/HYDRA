@@ -66,8 +66,12 @@ def crossEntropy(A, B):
 
 
 def applySimilarity(A_dict, B_dict, similarity):
-    A_vector, B_vector = applyNormalization(A_dict, B_dict)
-
+    #The simulation doesnt need normalization only be pytorch.
+    if not Config.SIMULATION_MODE:
+        A_vector, B_vector = applyNormalization(A_dict, B_dict)
+    else:
+        A_vector = torch.tensor(A_dict)
+        B_vector = torch.tensor(B_dict)
     #Format of the SIMILARITY_MEASURE = "COSINE_SIMILARITY"
     if similarity == "COSINE_SIMILARITY":
         #To avoid the error of "Expected 1-dimensional target for 1-dimensional input, but got target of size [N]" we need to add a dummy dimension to B_vector

@@ -1,7 +1,7 @@
 
 import Config
 from architecture.model import FederatedModel
-from utils.plotting import plot_MDS_3D, plot_MDS_3D_Simulation, plot_PCA_3D
+from utils.plotting import plot_MDS_3D, plot_MDS_3D_Simulation, plot_PCA_3D, plot_MDS_3D_Simulation_csv
 
 if __name__ == "__main__":
     print("Experimental runs")
@@ -11,13 +11,11 @@ if __name__ == "__main__":
     print("Ammount of agents: ", len(starter_model.agents))
     
    
-    #for epoch in range(Config.EPOCH_NUM):
-    #    starter_model.step()
+    for epoch in range(Config.EPOCH_NUM):
+        starter_model.step()
 
-    #Plot using the MDS 3D we just got.
-    #plot_MDS_3D()
-    #plot_PCA_3D()
+    
     if Config.SIMULATION_MODE:
-        plot_MDS_3D_Simulation()
+        plot_MDS_3D_Simulation_csv()
     else:
         plot_MDS_3D()

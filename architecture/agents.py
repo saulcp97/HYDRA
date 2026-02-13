@@ -14,6 +14,9 @@ import Config
 import numpy as np
 import random
 
+import pandas as pd
+
+
 use_accel = torch.accelerator.is_available()
 
 #torch.manual_seed(args.seed)
@@ -151,30 +154,53 @@ class nnAgent(mesa.Agent):
             if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name):
                 os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name)
 
-            #Now do the same for the iteration folder inside the agent folder
-            iteration = self.model.epoch
-            if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration)):
-                os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration))
-
             if Config.SIMULATION_MODE:
-                #TODO change it to a pandas
-                #Now Save the vector of the agent as a .npy file np.save
-                with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\weights.npy", "wb") as f:
-                    np.save(f, self.nnModel)
+                self.save_csv_iteration(localLoss)
+                #Save also the coalition members of the agent this iteration
+                with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\coalition.txt", "w") as f:
+                    result = "Coalition members: \n"
+                    for name, _ in self.coallitionNeighbors:
+                        result += name + "\n"
             else:
+                iteration = self.model.epoch
+                if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration)):
+                    os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration))
+
                 torch.save(self.nnModel.state_dict(), "outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\weights.pth")
             
-            with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\loss.txt", "w") as f:
-                f.write(str(localLoss))
+                with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\loss.txt", "w") as f:
+                    f.write(str(localLoss))
 
-            #Save also the coalition members of the agent this iteration
-            with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\coalition.txt", "w") as f:
-                result = "Coalition members: \n"
-                for name, _ in self.coallitionNeighbors:
-                    result += name + "\n"
-                #Add the self.averageSimilarity to the log for analysis
-                result += "Average Similarity: " + str(self.averageSimilarity) + "\n"
-                f.write(result)
+                #Save also the coalition members of the agent this iteration
+                with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\coalition.txt", "w") as f:
+                    result = "Coalition members: \n"
+                    for name, _ in self.coallitionNeighbors:
+                        result += name + "\n"
+                    #Add the self.averageSimilarity to the log for analysis
+                    result += "Average Similarity: " + str(self.averageSimilarity) + "\n"
+                    f.write(result)
+
+    def save_csv_iteration(self, loss):
+        #Check if the file exists, if not, we create it.
+        if not os.path.exists("outputs\\" + Config.experiment_name):
+            os.makedirs("outputs\\" + Config.experiment_name)
+
+        #Check if the agent folder exists and if not create it
+        if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name):
+            os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name)
+
+        #The format for the pandas is loss, density coalition, weights for simulated.
+        rowData = [loss, self.averageSimilarity] + list(self.nnModel)
+
+        columnsName = ['loss', 'density'] + [f'w{i}' for i in range(len(self.nnModel))]
+        df_file = pd.DataFrame([rowData], columns=columnsName)
+
+        fileName = "outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\expedient.csv"
+        if not os.path.exists(fileName):
+            df_file.to_csv(fileName, index=False, mode='w')
+        else:
+            df_file.to_csv(fileName, index=False, mode='a', header=False)
+
 
     def checkSelfCoalition(self):
         #We check first of all if the neighbors similarity have been updated, if not we do not update the coalition

@@ -244,42 +244,47 @@ def plot_PCA_3D():
     plt.show()
 
 #Simulation Plot 3D MDS.
-def plot_MDS_3D_Simulation():
+import pandas as pd
+def plot_MDS_3D_Simulation_csv():
     cmap = get_cmap(len(Config.AGENT_NAMES))
 
-    prefixDir = "outputs/" + Config.experiment_name + "/"
     hist_list = []
-
     #For loop for the Config.agent_num agents
+
     for agent in range(len(Config.AGENT_NAMES)):
         auxiliar = []
-        for epoch in range(Config.EPOCH_NUM):
-            path = prefixDir + "scp_" + str(agent) + "/iteration_" + str(epoch) + "/weights.npy"
-            weights = np.load(path)
-            auxiliar.append(weights)
-        hist_list.append(auxiliar)
+
+        pathAgent = "outputs/" + Config.experiment_name + "/" + "scp_" + str(agent) + "/expedient.csv"
+
+        df = pd.read_csv(pathAgent)
+
+        x_mds = df.iloc[:, 2:]
+
+        hist_list.append([x_mds])
         print(f"Agent {agent} loaded.")
 
     all_weights = np.vstack(hist_list)
 
-    print("All weights loaded, applying MDS...")
-    mds = MDS(n_components=2, metric='euclidean', init='random', random_state=42, n_init=1, max_iter=100)
-    
-    #ONly fit with the last 10% of the iterations, to see the final convergence.
-    last_10_percent = int(len(all_weights) * 0.01)
-    mds.fit(all_weights[-last_10_percent:])
-    print("MDS applied, plotting...")
+    print("Shape:", all_weights.shape)
+
+    mds = MDS(n_components=2, metric='euclidean', init='random', random_state=42, n_init=4, max_iter=300)
+
+    subset = all_weights[:, 0, :]
+
+    print(subset.shape)
+
+    mds.fit(subset)
 
     #We create the matplotlib 3D plot.
     fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111, projection='3d')
-    print("Finalizing plot...")
-    #Do a simple line plot connecting the points of each agent, to see the trajectory.
-    for agent in range(len(Config.AGENT_NAMES)):
-        agent_points = all_weights[agent*Config.EPOCH_NUM:(agent+1)*Config.EPOCH_NUM]
-        agent_mds = mds.fit_transform(agent_points)
-        ax.plot(range(Config.EPOCH_NUM), agent_mds[:, 0], agent_mds[:, 1], c=cmap(agent+1), alpha=0.5)
 
+    for agent in range(len(Config.AGENT_NAMES)):
+        agent_points = all_weights[agent, :, :]
+
+        agent_mds = mds.fit_transform(agent_points)
+
+        ax.plot(range(Config.EPOCH_NUM), agent_mds[:, 0], agent_mds[:, 1], c=cmap(agent+1), alpha=0.5)
 
     ax.set_title('Evolución de Pesos en el Espacio MDS')
     ax.set_xlabel('Iteración')

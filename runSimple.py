@@ -11,8 +11,8 @@ if __name__ == "__main__":
     print("Ammount of agents: ", len(starter_model.agents))
     
    
-    for epoch in range(Config.EPOCH_NUM):
-        starter_model.step()
+    #for epoch in range(Config.EPOCH_NUM):
+    #    starter_model.step()
 
     #Plot using the MDS 3D we just got.
     #plot_MDS_3D()

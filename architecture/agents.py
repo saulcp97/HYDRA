@@ -41,7 +41,12 @@ def average_weights(A, B, eps = 0.5):
 
 
 from architecture.neuralNetwork import Net
-originalWeights = Net().to(device).state_dict()
+#originalWeights = Net().to(device).state_dict()
+np.random.seed(Config.SIMULATION_SEED)
+originalWeights = np.random.rand(Config.VECTOR_DIMENSION)
+#Dataset is not a real dataset, but the random target vector that the agent will try to reach with its weights.
+objective = np.ones(Config.VECTOR_DIMENSION) - np.random.rand(Config.VECTOR_DIMENSION) * 2
+objectivePoint = originalWeights + objective/np.linalg.norm(objective) * (Config.EPOCH_NUM)
 
 class nnAgent(mesa.Agent):
     """An agent with fixed initial wealth."""
@@ -53,9 +58,9 @@ class nnAgent(mesa.Agent):
         if Config.SIMULATION_MODE:
             #To ensure the same random weights for all the agents, we can use the unique_id as a seed for the random generator.
             np.random.seed(Config.SIMULATION_SEED)
-            self.nnModel = np.random.rand(Config.VECTOR_DIMENSION)
+            self.nnModel = np.copy(originalWeights)
             #Dataset is not a real dataset, but the random target vector that the agent will try to reach with its weights.
-            self.dataset = self.nnModel + np.random.rand(Config.VECTOR_DIMENSION) * (Config.EPOCH_NUM/Config.VECTOR_DIMENSION)
+            self.dataset = np.copy(objectivePoint)
             self.optimizer = None
         else:
             self.nnModel = Net().to(device)
@@ -118,10 +123,10 @@ class nnAgent(mesa.Agent):
         localLoss = 0
 
         if Config.SIMULATION_MODE:
-            random_noise = np.random.rand(Config.VECTOR_DIMENSION) * Config.RANDOMNESS_SCALE
-            
-            movement = self.dataset - self.nnModel + random_noise
-            normalizedMove = movement / np.linalg.norm(movement)
+            random_noise = (np.ones(Config.VECTOR_DIMENSION) - np.random.rand(Config.VECTOR_DIMENSION)*2) * Config.RANDOMNESS_SCALE
+            #Dataaset is objective point, and self.nnModel is the actual vector.
+            movement = (self.dataset - self.nnModel) + random_noise
+            normalizedMove = movement / np.linalg.norm(movement) if np.linalg.norm(movement) > 1 else movement
 
             self.nnModel += normalizedMove
 
@@ -157,10 +162,16 @@ class nnAgent(mesa.Agent):
             if Config.SIMULATION_MODE:
                 self.save_csv_iteration(localLoss)
                 #Save also the coalition members of the agent this iteration
+                """
+                iteration = self.model.epoch
+                if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration)):
+                    os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration))
                 with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\coalition.txt", "w") as f:
                     result = "Coalition members: \n"
                     for name, _ in self.coallitionNeighbors:
                         result += name + "\n"
+                        """
+
             else:
                 iteration = self.model.epoch
                 if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration)):
@@ -197,9 +208,10 @@ class nnAgent(mesa.Agent):
 
         fileName = "outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\expedient.csv"
         if not os.path.exists(fileName):
-            df_file.to_csv(fileName, index=False, mode='w')
-        else:
-            df_file.to_csv(fileName, index=False, mode='a', header=False)
+            originalData = [-1, -1,] + list(np.copy(originalWeights))
+            originalFile = pd.DataFrame([originalData], columns=columnsName)
+            originalFile.to_csv(fileName, index=False, mode='w')
+        df_file.to_csv(fileName, index=False, mode='a', header=False)
 
 
     def checkSelfCoalition(self):

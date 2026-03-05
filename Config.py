@@ -110,13 +110,14 @@ network_graph = "graphs/complete.gml"
 USE_FILE_GRAPH = False
 COMPLETED_GRAPH = False
 GRAPH_GRADE = 8
+GRAPH_SEED = 42
 if USE_FILE_GRAPH:
     H = nx.read_graphml(network_graph)
 else:
     if COMPLETED_GRAPH:
         H = nx.complete_graph(NUMBER_OF_AGENTS)
     else:
-        H = nx.random_regular_graph(GRAPH_GRADE, NUMBER_OF_AGENTS)
+        H = nx.random_regular_graph(GRAPH_GRADE, NUMBER_OF_AGENTS, seed=GRAPH_SEED)
 for x in H.nodes:
     AGENT_NAMES.append(PREFIX+str(x))
     neigh = list(H.neighbors(x))

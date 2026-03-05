@@ -252,14 +252,11 @@ def plot_MDS_3D_Simulation_csv():
     #For loop for the Config.agent_num agents
 
     for agent in range(len(Config.AGENT_NAMES)):
-        auxiliar = []
-
         pathAgent = "outputs/" + Config.experiment_name + "/" + "scp_" + str(agent) + "/expedient.csv"
 
         df = pd.read_csv(pathAgent)
 
-        x_mds = df.iloc[:, 2:]
-
+        x_mds = df.iloc[:100, 2:]
         hist_list.append([x_mds])
         print(f"Agent {agent} loaded.")
 
@@ -269,7 +266,7 @@ def plot_MDS_3D_Simulation_csv():
 
     mds = MDS(n_components=2, metric='euclidean', init='random', random_state=42, n_init=4, max_iter=300)
 
-    subset = all_weights[:, 0, :]
+    subset = all_weights[:, -1, :]
 
     print(subset.shape)
 
@@ -286,10 +283,10 @@ def plot_MDS_3D_Simulation_csv():
 
         ax.plot(range(Config.EPOCH_NUM), agent_mds[:, 0], agent_mds[:, 1], c=cmap(agent+1), alpha=0.5)
 
-    ax.set_title('Evolución de Pesos en el Espacio MDS')
-    ax.set_xlabel('Iteración')
-    ax.set_ylabel('Dimensión MDS 1')
-    ax.set_zlabel('Dimensión MDS 2')
+    ax.set_title('Evolution of Weights in the MDS space')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('MDS Dimension 1')
+    ax.set_zlabel('MDS Dimension 2')
 
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()

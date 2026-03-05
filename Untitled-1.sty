@@ -1,0 +1,465 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+
+\usepackage[linesnumbered,ruled,vlined]{algorithm2e}
+\usepackage{siunitx}
+
+\sisetup{
+  table-number-alignment = center,
+  detect-weight = true,
+  detect-inline-weight = math,
+  round-mode = places,
+  round-precision = 4
+}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{Comparative Evaluation of Similarity Measures on the context of Formation of Dynamic Coalitions in Decentralized Federated Learning\\
+{\footnotesize \textsuperscript{*}Note: Sub-titles are not captured in Xplore and
+should not be used}
+}
+
+\author{\IEEEauthorblockN{1\textsuperscript{st} Given Name Surname}
+\IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+\textit{name of organization (of Aff.)}\\
+City, Country \\
+email address or ORCID}
+\and
+\IEEEauthorblockN{2\textsuperscript{nd} Given Name Surname}
+\IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+\textit{name of organization (of Aff.)}\\
+City, Country \\
+email address or ORCID}
+\and
+\IEEEauthorblockN{3\textsuperscript{rd} Given Name Surname}
+\IEEEauthorblockA{\textit{dept. name of organization (of Aff.)} \\
+\textit{name of organization (of Aff.)}\\
+City, Country \\
+email address or ORCID}
+}
+
+\maketitle
+
+\begin{abstract}
+In federated learning (FL), the accuracy and convergence speed of the system are greatly influenced by data heterogeneity and the weights shared during the training. To reduce the effect of data and weights divergence, the use of coalitions, groups of devices or agents inside a network that have priority for sharing the weights, has a significant positive impact. In this work, we compare the effects and dynamics that various similarity measures have on the coalitions formation and evolution of a decentralized FL system.
+
+\end{abstract}
+
+\begin{IEEEkeywords}
+federated learning, coalitions, similarity
+\end{IEEEkeywords}
+
+\section{Introduction}
+The rise of Federated Learning (FL) techniques has improved the way that distributed devices can train neural networks, allowing true DFL (Decentralized Federated Learning) without the need to centralize the data. This comes at the cost of performance on traditional FL, due to the presence of non-IID (Independent and Identically Distributed) data across participating agents \cite{b1}. The lack of a central agent that controls the data and the weights of the agents, this data heterogeneity causes a great hit on the performance thanks to weight divergence.
+
+To solve this problems the use of \textit{coalitions} has gained attention. A coalition is a group of agents that prioritize sharing model weights between themselves than with others, limiting the weight mixing with others neighbors. This makes the coalitions learn and start converging towards the same path \cite{b2}.
+
+One usually overlook aspect when discussing about dynamic coalitions in federated learning, is the criterion to create and manage the coalitions once the system already started. In this work we explore the effects of using different measures of similarity for that purpose.
+
+\section{Related Work}
+
+\subsection{Consensus-based Learning algorithms}
+
+Consensus, in the context of FL, is an iterative and distributed algorithm, whose goal is to make all agents agree on the same weights. To reach this goal, the algorithm makes use of communication interactions and the rules that govern the MAS (Multi-Agent System).
+
+For machine learning, the consensus algorithm most commonly used is \textbf{FedAvg} (Federated Averaging) \cite{b9}, this algorithm consist in apply the average between the weights of two models trained in parallel. This approach is the most simple and flawed because it does not protect the model from non-IID (Independent and identically distributed) data that mess up their gradients \cite{b1}.
+
+Other variations FedAvg have mechanisms to combat a sudden change of gradients, but require a central node that tries to minimize the drift of gradients and correct the weights, such as Federated Proximal (FedProx), introduces a measure of proximity to calculate the weight of each agent on the consensus \cite{b11}; or Federated Averaging with Server Momentum (FedAvgM) \cite{b12} .
+
+DFML (Decentralized Federated Mutual Learning) \cite{b10}, is a version of decentralized FedAvg where an agent takes the temporal role of weight aggregator, allowing to apply mechanisms of protection for non-IID in a decentralized context.
+
+\subsection{Coalitions in agent-based Decentralized Federated Learning}
+
+A coalition is a structured subset of agents that agree to coordinate their behavior toward a shared objective while preserving their individual autonomy. In MAS, coalitions act as an organizational layer between fully independent agents. Each agent remains an independent decision-making entity but adopts additional interaction rules within the coalition, such as preferential communication, information sharing, or joint decision protocols.
+
+In the context of DFL, a coalition defines the \textbf{set of peers} with which an agent exchanges model parameters, gradients, or similarity information. The coalition therefore restricts the effective communication graph and shapes how knowledge propagates through the system. Rather than interacting with the entire population, an agent prioritizes collaboration with coalition members that satisfy a given compatibility criterion. This criterion can be based on properties of the agents’ local data, their position in the network topology, or their observed learning behavior.
+
+Coalitions introduce a mechanism to \textbf{manage heterogeneity}. When agents operate on non-IID data or under different environmental constraints, unrestricted model mixing can degrade convergence. Coalition formation allows agents with compatible characteristics to intensify cooperation while limiting interference from incompatible peers. At the same time, coalitions do not imply isolation: inter-coalition communication can still occur with a different probability, which preserves global information flow.
+
+
+\subsection{Taxonomy of Coalitions}
+
+A useful way to position coalition strategies is to describe them along three orthogonal axes.
+
+\begin{enumerate}
+    \item \textbf{Coalition formation criterion}: semantical vs positional.
+    A first distinction is the criterion used to decide whether two agents should belong to the same coalition. Surveys of FL coalitions separate (i) semantic formation, where agents are grouped because their local data (or learning task) shares meaning or structure, from (ii) positional formation, where grouping depends on geographical proximity and communication constraints (range, neighborhood in a communication graph). 
+    This distinction also appears in coalition-enabled consensus learning proposals, where coalitions are motivated either by proximity in space (to reduce communication cost) or proximity in the meaning of tasks and data (to reduce harmful mixing under heterogeneity). 
+    
+    \item \textbf{Persistence of membership}: static vs dynamic.
+    Both semantic and positional coalitions can be static or dynamic. In static formation, the coalition assignment is fixed after initialization; agents maintain the same coalition membership throughout. 
+    In dynamic formation, membership can change during execution, including join/leave events and reassignment driven by context (data drift, mobility, availability). 
+    A concrete positional example is WANET-style settings in which each agent’s neighborhood changes over time due to mobility and the antenna's limited range; coalitions emerge from the set of peers reachable at each time step. 
+
+    \item \textbf{Semantic method of creation}: manual vs automatic.
+    Semantic coalition formation groups agents according to the meaning and structure of their local data. In this setting, coalition membership depends on a representation of semantics that can be obtained through manual expert design or through automatic data-driven mechanisms. In both cases, coalitions can be configured as static or dynamic structures.
+    
+    \textit{Manual semantic formation} relies on human expert knowledge to define the conceptual framework that agents use to assess similarity. A domain expert participates in the design of ontologies, taxonomies, or metadata schemas that encode relationships between concepts relevant to the learning task. Agents use these shared structures to interpret their local data and to determine coalition membership. The semantic space is therefore grounded in externally curated knowledge rather than inferred only from observations. Manual semantic coalitions can be static, when ontology-based assignments remain fixed during training, or dynamic, when agents update their coalition based on rule-driven reinterpretation of expert-defined categories as new information becomes available.
+    
+    \textit{Automatic semantic formation} derives coalition structure directly from data without requiring human curation of the semantic model. Agents compute similarity using learned representations such as embeddings, latent features, or clustering outputs that approximate semantic proximity. The coalition structure emerges from algorithmic comparison of these representations rather than from predefined expert rules. Automatic semantic coalitions can also be static or dynamic. In the static case, the grouping is computed once from an initial representation and remains unchanged. In the dynamic case, agents periodically recompute representations and adjust membership to reflect data drift, model evolution, or changing task similarity.
+    
+    Manual approaches emphasize interpretability and alignment with domain concepts, while automatic approaches emphasize adaptability and scalability. Both variants support static and dynamic realizations, which determine whether coalition boundaries are treated as fixed design choices or as evolving properties of the learning process.
+
+\end{enumerate}
+
+
+\section{Methodology}
+
+
+\subsection{Similarity Measures}
+    In the context of comparing similarity measures, it is important to remark that similarity, difference, and distance measures, their name only indicates if they maximize the difference (e.g., As more distance there is between two points, more different they are) or if the maximize the similarity (e.g., As more aligned the direction of two vectors are, the more similar they are). As seen in Table \ref{tab:measuresPropertiesList}, the selection of measures to compare each belongs to a different category.
+
+    None of the similarity measures chosen to be compared can be applied directly over the weights of neural networks; as such, there is need to normalize the weights before comparison. There are multiple ways of apply the normalization, with different problems. The one we apply on this work is getting a single vector from all the trainable parameters of a network, this aproach has the potential problem of treating every change of the same magnitude in the vector with the same relevance, when in reality the weights of the output layer are more relevant over all for the output of the network\cite{b3}.
+    
+    The other potential problem with comparing the similarity in this way, is that this methodology can't detect structural differences or even the exact same weights changed their position during training\cite{b4}. This isn't the case in the context of federated learning, given the common initial weight start and the constant apply of consensus, limits greatly the Loss Landscape and the convergence of the model. This last part is only true if the consensus is frequent enough.
+
+    The similarity measures chosen for the study are the following:
+    \begin{itemize}
+        \item \textbf{Euclidean Distance} \cite{b13}: Measures the straight-line distance between two points in multi-dimensional space. Can be used to measure the magnitude difference between vectors.
+        \item \textbf{Cosine Similarity} \cite{b13}: Measures the orientation between two vectors, regardless of their magnitude.
+        \item \textbf{Jaccard Index} \cite{b13}: Measures the structural similarity between sample sets by calculating the ratio of overlapping close values.
+        \item \textbf{Mean Squared Error} \cite{b14}: Measures the average squared intensity of error between predicted and actual values by averaging the squares of the differences.
+        \item \textbf{Cross-Entropy Loss}: \cite{b15} Measures the divergence between two probability distributions.
+    \end{itemize}
+    
+    
+\begin{table*}[tb]
+\caption{Stadistics of the simulated}
+\label{tab:measuresPropertiesList}
+\centering
+\begin{tabular}{|l|l|l|l|}
+\hline
+Similarity Measure          & Formula           & Type                  & Category       \\ \hline
+Euclidean Distance          &  $d\left( p,q\right)   = \sqrt {\sum _{i=1}^{n}  \left( q_{i}-p_{i}\right)^2 }$
+                            & Difference Measure    & Geometric (Point to Point)      \\ \hline
+Cosine Similarity           &  $Similarity (A,B) = \dfrac {A \cdot B} {\left\| A\right\| _{2}\left\| B\right\| _{2}}$
+                            & Similarity Measure    & Angular                            \\ \hline
+Jaccard Index               &  $J(A, B) = \frac{|A \cap B|}{|A \cup B|}$
+                            & Similarity Measure    & Structural/Overlap                  \\ \hline
+Mean Squared Error (MSE)    &  $\text{MSE}(p, q) = \frac{\sum_{i=0}^{N - 1} (p_i - q_i)^2}{N}$
+                            & Difference Measure    & Magnitud/Variance                  \\ \hline
+Cross-Entropy Loss          &  $H(y,\hat{y}) = -\sum_i y_i \log \hat{y_i}$
+                            & Difference Measure    & Probabilistic                      \\ \hline
+\end{tabular}
+\end{table*}
+
+\subsection{Consensus Algorithm}
+In this work, the focus of the study is on the effects in decentralized networks, and as such we need to use Gossip Averaging \cite{b8} for the lack of a central node that organizes and changes the weights of the agents. 
+
+The concrete algorithm used is a base version of FedAvg and mixes the weights as shown in \textbf{Algorithm \ref{alg:consensus}}.
+
+\begin{algorithm}[]
+\label{alg:consensus}
+\caption{FedAvg and Similarity Tracking.}
+\SetKwFunction{FCheck}{applyWeightConsensus}
+\SetKwInOut{Input}{Entrada}
+\SetKwInOut{Output}{Resultado}
+
+\FCheck{}\;
+    \BlankLine
+    \While{$\text{weightReceivedList} \neq \emptyset$}{
+        % Extraer el primer elemento del buffer
+        $(n, w_{neigh}) \gets \text{weightReceivedList.pop}(0)$\;
+        
+        \BlankLine
+        $\text{sim} \gets \text{rateSimilarity}(w_{neigh}, \theta)$\;
+        $\text{neighbor\_info}[n] \gets \text{sim}$\;
+        
+        \BlankLine
+        $\epsilon \gets \frac{1}{|\text{neighborhood}|}$\;
+    
+        $\theta \gets \theta + \epsilon \cdot (w_{neigh} - \theta)$\;
+    }
+\end{algorithm}
+This simpler approach allows that during the evaluation of the experiments most of the variations are caused exclusively by the similarity measures, other consensus algorithm variation like \textbf{DFML} would obfuscate the origin of the differences in the results.
+
+\subsection{Coalition Algorithm}
+
+The focus of this work is the interaction between different similarity measures and the coalitions formed in a decentralized federated learning framework, this means that there is no central point controlling what agent forms part of which coalition.
+
+For this work we use a self appointment coalition algorithm in which every agent has it's own interpretation of what agents form part of their coalition. In this algorithm \ref{alg:coalition} having precalculated the similarity with the neighbors and starting with an initial coalition formed by all neighbor agents.
+
+We use a variable called \textbf{threshold\_similarity} to determine the flexibility of the coalition, a threshold similarity of 1 means that every time the coalition updates would reduce its members until there is only 1 member, besides the own agent. On the other side, threshold similarity doesn't have a maximum value but a too big of a value would impede the exclusion of agents diverging, values between 1.48 and 1.6, normally rounded to 1.5 are commonly used and prove effective \cite{b5}.
+
+\begin{algorithm}[]
+\label{alg:coalition}
+\caption{Dynamic update of the coalition based on similarity thresholds.}
+\SetKwFunction{FCheck}{UpdateCoalition}
+\SetKwInOut{Input}{Entrada}
+\SetKwInOut{Output}{Resultado}
+
+\FCheck{}\;
+
+    \BlankLine
+    
+    $\mathcal{C} \gets \{ \text{name} \mid \text{name} \in \text{coalitionNeighbors} \}$\;
+    
+    $\text{avgSim} \gets \frac{1}{|\mathcal{C}|} \sum_{n \in \mathcal{C}} \text{neighbor\_info}[n]$\;
+    \BlankLine
+
+    $\text{new\_coalition} \gets \emptyset$\;
+    \ForEach{$(\text{name, similarity}) \in \text{neighbor\_info}$}{
+        \eIf{\text{IS\_SIMILARITY}}{
+            \If{$\text{similarity} > \frac{\text{avgSim}}{\text{threshold\_similarity}}$}{
+                $\text{new\_coalition} \gets \text{new\_coalition} \cup \{\text{name}\}$\;
+            }
+        }{
+            \If{$\text{similarity} < \text{avgSim} \times \text{threshold\_similarity}$}{
+                $\text{new\_coalition} \gets \text{new\_coalition} \cup \{\text{name}\}$\;
+            }
+        }
+    }
+    \Return $\text{new\_coalition}$\;
+\end{algorithm}
+
+\begin{figure}[htbp]
+\label{fig:coalitionLimits}
+\centering
+    \centerline{\includegraphics[width=0.5\textwidth]{coalitionFormation.png}}
+    \caption{Representation of the Coalition}
+    \label{fig}
+\centering
+\end{figure}
+
+\subsection{Experiments}
+
+To realize the comparative we decided to simulate the process of training neural networks in a large amount of agents using a simple Stochastic Gradient Descent\cite{b6} on a multidimensional vector, and use it like the weights of the neural networks.
+
+The important static parameters that will stay fixed during the different experiments, and some are the cause of some of the quirks of the training, are:
+
+\begin{itemize}
+\item \textbf{Number of agents}: 1000, making it a graph with 1000 different unique nodes.
+
+\item \textbf{Grade of the graph}: 8, this makes that not only every agent only has 8 unique neighbor agents, but that the maximum size of every coalition is 8, plus the node of the agent that calculates it.
+
+\item \textbf{Dimensionality of the weights}: 100, the size of this vector was decided after testing, projecting the evolution of the simulated training, increasing the size until showed the properties of real networks and don't converging linearly in an instant.
+
+
+\item \textbf{Learning rate}: 0.01, average value for learning rate.
+\item \textbf{Scale of Noise}: 0.5, a value that determines how much noise is introduced turing the gradient descent to ensure it doesn't become a straight line, the value is slightly increased above the average.
+
+\item \textbf{Number of epochs}: 100, it would be a low number if it were the training of a real neural network but it's more than enough number of iterations to run these experiments.
+\end{itemize}
+
+One of the quirks on the training that these parameters cause is the low grade on a big graph, that could cause that multiple coalitions converge in close values while the coalitions themselves are more disperse.
+
+During the experiments on the selected similarity measures we will measure 6 different metrics to analyze the state of the system after training and how the coalitions worked and evolved:
+
+\begin{itemize}
+\item \textbf{Average Final Coalition Size}: Average size of the coalition of every agent, 1 would be the minimum and 8 the maximum in with the parameters.
+
+\item \textbf{Average Intra-Coalition Distance}: Average of the average euclidean distance that the agent has with the members of it's coalition.
+
+\item \textbf{Average Coalition Divergence}: Average of the squared distances between the agents of the same coalition, divided by the number of members of the coalition. This measure is more precise than the Average Intra-Coalition distance because the square makes more clear when the weights are more disperse.
+
+\item \textbf{Average Converged Coalition distance}: Average distance between the average weight of the coalitions.
+
+\item \textbf{Average Final Error}: Average final error of all agents at the end of the training.
+
+\item \textbf{Reciprocity Percentage}: Percentage of how many agents are part of the coalitions of the agents they have in their coalition.
+\end{itemize}
+
+Besides these values, we also experiment with different values for threshold similarity, 1.75, 1.50 and 1.25, being 1 the minimum possible and 2 would cause the coalitions to be too flexible to the changes of weights; That makes these 3 values the more interesting to test, being 1.50 the one referenced on literature \cite{b5}.
+
+\section{Results \& Analysis}
+
+\begin{figure}[htbp]
+\label{fig:evolutionPCAcos}
+\caption{Example of the evolution of a system using cosine similarity with 10 agents.}
+\centering
+    \centerline{\includegraphics[width=0.5\textwidth]{10_agents_cos.png}}
+\centering
+\end{figure}
+
+\subsection{Exposition of the results}
+
+The different experiments are using the same parameters during their execution, for a better comparative, as expressed on tables \ref{tab:elasticityhigh}, \ref{tab:elasticitymid} and \ref{tab:elasticitylow}.
+
+An important point to clarify before doing the analysis of the results, is that all experiments converged correctly in every instance, due to the way the experiment was conducted, with a simplistic version of gradient descent, this more simple approach guaranteed that all the agents on the network converged in a similar way, as we can see in the figure \ref{fig:evolutionPCAcos} and \ref{fig:evolutionPCAeuc}.
+
+
+\begin{figure}[htbp]
+\label{fig:evolutionPCAeuc}
+\caption{Example of the evolution of a system with 10 agents.}
+\centering
+    \centerline{\includegraphics[width=0.5\textwidth]{10_agents_euclidean.png}}
+\centering
+\end{figure}
+
+In the case of the table \ref{tab:elasticityhigh}, we can observe a great reciprocity percentage, that and the fact that for an 8 grade graph the average coalition size, which excludes the own agent, is in all cases superior to 7 means that means that there are few cases where an agent has been excluded from a coalition, the average coalition Divergence proves that in all five measures tested. The outlier in this case is Jaccard Index, with a 100\si{\percent} of reciprocity index, and an average of 8 members on the coalition out of 8.
+
+From the results of table \ref{tab:elasticitymid}, it's clear that the most affected measures for the change of the threshold similarity are the euclidean distance and MSE, and they, thanks to the similar formula, show closer results. The measures of Jaccard and Cross-Entropy Loss, show over all the same results as in the previous case, meaning that the variations on the average similarity between agents weren't affected as much with the threshold. The case of cosine similarity is more interesting, because it changed it's values the same way Euclidean Distance and MSE did, but in a lower scale.
+
+In the case of table \ref{tab:elasticitylow}, the threshold similarity affected all the measures, except cross-entropy loss, that changes some values slightly showing the change had a real effect on it. Meanwhile Jaccard Index has some changes on the reciprocity percentage, but minimal in other values. Euclidean distance and MSE continue their tendency of behaving in similar way. Cosine similarity seems to be affected at much slower rate by the threshold similarity but clearly it affects it in the same way, that does to euclidean distance and MSE.
+
+\subsection{Interpretation of the results}
+As mentioned before Jaccard Index an in lower way Cross-Entropy Loss, work as similarity measures of other domains, Jaccard can work to measure structural differences, when training different networks with the same architecture, but in the context of federated learning with consensus algorithm, unless the value of threshold similarity is close to 1, it will return high values of similarity all the time. The same can be said with cross-entropy loss, with he difference that is less consistent in the ratings for being a probabilistic distance measure.
+
+Euclidean distance and MSE, work treating the weights like a point in the space and calculating the magnitude of the difference between them in a line, that makes them more sensible to the changes to threshold similarity, that sensibility also makes them in measures that can be easely to control with a parameter.
+
+Cosine similarity treats the weights like vectors and return the alineation between them, that makes it so it can be more sensible to structural differences than euclidean distance or MSE could be, but in the context of federated learning the structures learned for the networks will be almost identical, it is still affected by the changes on threshold similarity, but with a lower rate because it's a similarity measure and also has less consistency because it is a angular similarity measure, that means that if two weights are aligned, their similarity will be higher even if the magnitude difference is the higher between their neighbors.
+
+\begin{table*}[t]
+\centering
+\caption{Statistics of the simulated runs with threshold similarity value of 1.75}
+\label{tab:elasticityhigh}
+\begin{tabular}{
+|l|
+S[table-format=2.4]
+S[table-format=2.4]
+S[table-format=2.4]
+S[table-format=2.4]
+S[table-format=2.4]|
+}
+\hline
+\textbf{Test Metrics} &
+\multicolumn{5}{c|}{\textbf{Similarity Measures}} \\
+\cline{2-6}
+&
+{\textbf{Euclidean}} &
+{\textbf{Cosine}} &
+{\textbf{Jaccard}} &
+{\textbf{MSE}} &
+{\textbf{Cross-Entropy}} \\
+\hline
+Average Final Coalition Size & 7.6860±0.6160 & 7.8670±0.3759 & 8.0000±0.0000 & 7.7110±0.5617 & 7.8950±0.6527 \\
+Average Intra-Coalition Distance & 15.4325±1.1258 & 15.4000±1.0962 & 15.4576±1.1426 & 15.3587±1.0744 & 15.4765±1.1187 \\
+Average Coalition Divergence & 1984.3321±239.4320 & 2017.6686±195.3290 & 2073.2879±180.6141 & 1967.8094±214.6905 & 2058.3137±254.0443 \\
+Average Converged Coalition Distance & 6.0329±0.5119 & 5.9454±0.4731 & 5.9714±0.4759 & 5.9851±0.4840 & 6.0554±0.5494 \\
+Average Final Error & 50.6304±5.8696 & 50.4354±5.4142 & 50.7291±5.7188 & 50.4104±5.3921 & 50.8426±5.6324 \\
+Reciprocity Percentage &
+96.1488\si{\percent} &
+98.3094\si{\percent} &
+100.00\si{\percent} &
+96.4077\si{\percent} &
+98.6954 \si{\percent} \\
+\hline
+\end{tabular}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\caption{Statistics of the simulated runs with threshold similarity value of 1.5}
+\label{tab:elasticitymid}
+\begin{tabular}{
+|l|
+S[table-format=2.4]
+S[table-format=2.4]
+S[table-format=2.4]
+S[table-format=2.4]
+S[table-format=2.4]|
+}
+\hline
+\textbf{Test Metrics} &
+\multicolumn{5}{c|}{\textbf{Similarity Measures}} \\
+\cline{2-6}
+&
+{\textbf{Euclidean}} &
+{\textbf{Cosine}} &
+{\textbf{Jaccard}} &
+{\textbf{MSE}} &
+{\textbf{Cross-Entropy}} \\
+\hline
+Average Final Coalition Size & 5.4840±1.4470 & 7.6980±0.5682 & 8.0000±0.0000 & 5.5140±1.4764 & 7.8990±0.6171 \\
+Average Intra-Coalition Distance & 15.3777±1.3482 & 15.4662±1.1271 & 15.4613±1.1264 & 15.3247±1.3329 & 15.4468±1.0895 \\
+Average Coalition Divergence & 1408.7340±443.0443 & 1994.3667±232.5663 & 2075.3979±177.4765 & 1402.7260±444.3522 & 2047.3194±239.3869 \\
+Average Converged Coalition Distance & 7.1551±0.9331 & 6.0331±0.4879 & 5.9582±0.4611 & 7.1296±0.9209 & 5.9965±0.5325 \\
+Average Final Error & 51.1804±6.1207 & 50.6636±5.6553 & 50.7404±5.6558 & 50.9051±6.0576 & 50.7067±5.6910 \\
+Reciprocity Percentage &
+67.9066\si{\percent} &
+96.1808\si{\percent} &
+100.00\si{\percent} &
+69.1694\si{\percent} &
+98.7467\si{\percent} \\
+\hline
+\end{tabular}
+\end{table*}
+
+
+\begin{table*}[t]
+\centering
+\caption{Statistics of the simulated runs with threshold similarity value of 1.25}
+\label{tab:elasticitylow}
+\begin{tabular}{
+|l|
+S[table-format=2.4]
+S[table-format=2.4]
+S[table-format=2.4]
+S[table-format=2.4]
+S[table-format=2.4]|
+}
+\hline
+\textbf{Test Metrics} &
+\multicolumn{5}{c|}{\textbf{Similarity Measures}} \\
+\cline{2-6}
+&
+{\textbf{Euclidean}} &
+{\textbf{Cosine}} &
+{\textbf{Jaccard}} &
+{\textbf{MSE}} &
+{\textbf{Cross-Entropy}} \\
+\hline
+Average Final Coalition Size & 1.9340±1.2774 & 7.3580±0.8831 & 7.9970±0.0547 & 2.0160±1.3913 & 7.9070±0.6053 \\
+Average Intra-Coalition Distance & 14.8499±2.3748 & 15.4033±1.0908 & 15.4411±1.1173 & 14.7986±2.5331 & 15.3883±1.1143 \\
+Average Coalition Divergence & 478.3938±453.3975 & 1893.5499±290.1132 & 2063.5666±171.5915 & 502.7860±491.5436 & 2035.9755±238.9484 \\
+Average Converged Coalition Distance & 11.5221±1.9078 & 6.1938±0.5586 & 5.9131±0.4699 & 11.3499±1.8131 & 6.0019±0.5801 \\
+Average Final Error & 56.3095±10.0744 & 50.5406±5.5687 & 50.6188±5.6314 & 56.0025±10.0025 & 50.5911±5.6574 \\
+Reciprocity Percentage &
+12.2027\si{\percent} &
+91.9543\si{\percent} &
+99.9625\si{\percent} &
+12.1032\si{\percent} &
+98.8491\si{\percent} \\
+\hline
+\end{tabular}
+\end{table*}
+
+
+\section{Conclusion and future work}
+As seen in the results of the experiments, either \textbf{Euclidean Distance} or \textbf{Mean Squared Error} cause almost the same behavior on a decentralized federated learning benchmark given the same parameters. The ability to regulate linearly how strict the coalition algorithm would be and the bonus of being implemented by default in most of the mathematical libraries, makes them seem as the most versatiles to use on this type of work.
+
+There are other similarity measures with different properties, and other types to apply them to the weights, in a way to attempt to take in consideration the topology of the neural network during the calculations of similarity. We leave these questions on future work.
+
+\begin{thebibliography}{00}
+
+\bibitem{b1} Zhao, Yue, Meng Li, Liangzhen Lai, Naveen Suda, Damon Civin, Vikas Chandra. "Federated Learning with Non-IID Data." arXiv:1806.00582, 2018.
+\bibitem{b2} N. Zhang, Q. Ma, W. Mao and X. Chen, "Coalitional FL: Coalition Formation and Selection in Federated Learning With Heterogeneous Data," in IEEE Transactions on Mobile Computing, vol. 23, no. 11, pp. 10494-10508, Nov. 2024, doi: 10.1109/TMC.2024.3375325. 
+
+\bibitem{b3} H. Li, Z. Xu, G. Taylor, C. Studer, and T. Goldstein, "Visualizing the Loss Landscape of Neural Nets," 2017, arXiv:1712.09913.
+\bibitem{b4} S. Kornblith, M. Norouzi, H. Lee, and G. Hinton, "Similarity of Neural Network Representations Revisited," 2019, arXiv:1905.00414.
+
+\bibitem{b5} P.M.S. Sánchez, A.H. Celdrán, T. Schenk, A.L.B. Iten, G. Bovet, G.M. Pérez, and B. Stiller, "Studying the Robustness of Anti-adversarial Federated Learning Models Detecting Cyberattacks in IoT Spectrum Sensors," 2022, arXiv:2202.00137.
+
+\bibitem{b6} D. Li, J. Wu, and Q. Zhang, "Stochastic Gradient Descent in the Viewpoint of Graduated Optimization," 2023, arXiv:2308.06775.
+
+\bibitem{b7}Jing Hou, Guang Chen, Jin Huang, Yingjun Qiao, Lu Xiong, Fuxi Wen, Alois Knoll, Changjun Jiang, Large-Scale Vehicle Platooning: Advances and Challenges in Scheduling and Planning Techniques, Volume 28, 2023, Pages 26-48, ISSN 2095-8099, https://doi.org/10.1016/j.eng.2023.01.012.
+
+\bibitem{b8}Boyd, S., Ghosh, A., Prabhakar, B., and Shah, D. (2006). Randomized gossip algorithms. IEEE Transactions on Information Theory, 52(6):2508–2530.
+
+\bibitem{b9}T. Sun, D. Li, and B. Wang, "Decentralized Federated Averaging," 2021, arXiv:2104.11375.
+
+\bibitem{b10}Y.H. Khalil, A.H. Estiri, M. Beitollahi, N. Asadi, S. Hemati, X. Li, G. Zhang, and X. Chen, "DFML: Decentralized Federated Mutual Learning," 2024, arXiv:2402.01863.
+
+\bibitem{b11}T. Li, A.K. Sahu, M. Zaheer, M. Sanjabi, A. Talwalkar, and V. Smith, "Federated Optimization in Heterogeneous Networks," 2018, arXiv:1812.06127.
+
+\bibitem{b12}T.H. Hsu, H. Qi, and M. Brown, "Measuring the Effects of Non-Identical Data Distribution for Federated Visual Classification," 2019, arXiv:1909.06335.
+
+\bibitem{b13}A. Levy, B.R. Shalom, and M. Chalamish, "A Guide to Similarity Measures," 2024, arXiv:2408.07706v1.
+
+\bibitem{b14} G. Palubinskas, "Mystery behind similarity measures mse and SSIM," 2014 IEEE International Conference on Image Processing (ICIP), Paris, France, 2014, pp. 575-579, doi: 10.1109/ICIP.2014.7025115.
+
+\bibitem{b15} A. Mao, M. Mohri, and Y. Zhong, "Cross-Entropy Loss Functions: Theoretical Analysis and Applications," 2023, arXiv:2304.07288.
+
+\end{thebibliography}
+
+
+\end{document}

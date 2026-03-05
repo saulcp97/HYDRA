@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import utils.Similarities as Similarities
 
 
-def get_cmap(n, name='hsv'):
+def get_cmap(n, name='viridis'):
     '''Returns a function that maps each index in 0, 1, ..., n-1 to a distinct 
     RGB color; the keyword argument name must be a standard mpl colormap name.'''
     return plt.cm.get_cmap(name, n)
@@ -249,15 +249,17 @@ def plot_MDS_3D_Simulation_csv():
     cmap = get_cmap(len(Config.AGENT_NAMES))
 
     hist_list = []
+    all_data = []
     #For loop for the Config.agent_num agents
 
     for agent in range(len(Config.AGENT_NAMES)):
         pathAgent = "outputs/" + Config.experiment_name + "/" + "scp_" + str(agent) + "/expedient.csv"
 
         df = pd.read_csv(pathAgent)
-
-        x_mds = df.iloc[:100, 2:]
+        
+        x_mds = df.iloc[:Config.EPOCH_NUM, 2:]
         hist_list.append([x_mds])
+        
         print(f"Agent {agent} loaded.")
 
     all_weights = np.vstack(hist_list)
@@ -266,7 +268,7 @@ def plot_MDS_3D_Simulation_csv():
 
     mds = MDS(n_components=2, metric='euclidean', init='random', random_state=42, n_init=4, max_iter=300)
 
-    subset = all_weights[:, -1, :]
+    subset = all_weights[:, 1, :]
 
     print(subset.shape)
 
@@ -277,10 +279,9 @@ def plot_MDS_3D_Simulation_csv():
     ax = fig.add_subplot(111, projection='3d')
 
     for agent in range(len(Config.AGENT_NAMES)):
-        agent_points = all_weights[agent, :, :]
+        agent_points = all_weights[agent, :, :][:Config.EPOCH_NUM]
 
         agent_mds = mds.fit_transform(agent_points)
-
         ax.plot(range(Config.EPOCH_NUM), agent_mds[:, 0], agent_mds[:, 1], c=cmap(agent+1), alpha=0.5)
 
     ax.set_title('Evolution of Weights in the MDS space')
@@ -290,4 +291,110 @@ def plot_MDS_3D_Simulation_csv():
 
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
+    plt.show()
+
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
+from mpl_toolkits.mplot3d import Axes3D
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+def plot_spread_optimized():
+    all_weights = []
+    hist_list = []
+    cmap = get_cmap(len(Config.AGENT_NAMES), "hot")
+    for agent in range(len(Config.AGENT_NAMES)):
+        pathAgent = "outputs/" + Config.experiment_name + "/" + "scp_" + str(agent) + "/expedient.csv"
+
+        #Lecture format:
+        #loss (0), density (1), num_neighbors (2), neighbor_names (3-3+num_neighbors), similarities (4+num_neighbors, 4+2*num_neighbors)
+        # coalition_length (5+2*num_neighbors), bin_masks (6+2*num_neighbors, 6+3*num_neighbors)
+
+        df = pd.read_csv(pathAgent)
+        start_idx = 4 + 3*int(df.iloc[0, 2])
+
+        x_mds = df.iloc[1:1+Config.EPOCH_NUM, start_idx:]
+        hist_list.append([x_mds])
+        
+        #print(f"Agent {agent} loaded with shape:{x_mds.shape}")
+
+    all_weights = np.vstack(hist_list)
+    n_agents, n_epochs, n_dims = all_weights.shape
+    
+    # PASO 1: Centrado respecto al objetivo final
+    final_consensus = all_weights[:, -1, :].mean(axis=0)
+    centered = all_weights - final_consensus
+    
+    # PASO 2: Aplanado y Escalado
+    # Esto iguala la importancia de todas las dimensiones vectoriales
+    flattened = centered.reshape(-1, n_dims)
+    scaler = StandardScaler()
+    flattened_scaled = scaler.fit_transform(flattened)
+    
+    # PASO 3: PCA con enfoque en la dispersión
+    # Reducimos a 2 componentes para los ejes Y y Z
+    pca = PCA(n_components=2)
+    reduced_points = pca.fit_transform(flattened_scaled)
+    
+    # Re-formateamos
+    trajectories = reduced_points.reshape(n_agents, n_epochs, 2)
+    
+    # --- Visualización ---
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    eps = 1e-16
+
+
+    # PASO 4: Multiplicador de dispersión (Opcional)
+    # Si aún quieres más separación visual, puedes aplicar un factor de escala
+    spread_factor = 10
+    ax.set(xlim=(0, 100), ylim=(-300, 300), zlim=(-100, 100))
+    maxY = -1
+    maxZ = -1
+    minY = 1000
+    minZ = 1000
+    for i in range(n_agents):
+        iYMin = np.min(trajectories[i, :, 0])
+        iZMin = np.min(trajectories[i, :, 1])
+        iYMax = np.max(trajectories[i, :, 0])
+        iZMax = np.max(trajectories[i, :, 1])
+        if minY > iYMin:
+            minY = iYMin
+
+        if minZ > iZMin:
+            minZ = iZMin
+
+        if maxY < iYMax:
+            maxY = iYMax
+
+        if maxZ < iZMax:
+            maxZ = iZMax
+
+
+    for i in range(n_agents):
+        x = np.arange(n_epochs)
+
+        #vector_normY = 2 * (trajectories[i, :, 0] - minY) / (maxY - minY) - 1
+        #vector_normZ = 2 * (trajectories[i, :, 1] - minZ) / (maxZ - minZ) - 1
+        #y = vector_normY * spread_factor
+        #z = vector_normZ * spread_factor
+        
+        y = trajectories[i, :, 0] * spread_factor
+        z = trajectories[i, :, 1] * spread_factor
+        ax.plot(x, y, z, alpha=0.2, c=cmap(i))
+
+    cmap2 = plt.get_cmap('hot')
+    norm = Normalize(vmin=0, vmax=n_agents - 1)
+
+    sm = ScalarMappable(cmap=cmap2, norm=norm)
+    sm.set_array([])
+
+    cbar = fig.colorbar(sm, ax=ax, pad=0.1, shrink=0.6, aspect=20)
+    cbar.set_label('Agent Index', rotation=270, labelpad=15)
+    
+    ax.set_title('Evolution of Weights in the PCA space')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('PCA Dimension 1')
+    ax.set_zlabel('PCA Dimension 2')
+    
     plt.show()

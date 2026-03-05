@@ -61,6 +61,7 @@ class nnAgent(mesa.Agent):
             self.nnModel = np.copy(originalWeights)
             #Dataset is not a real dataset, but the random target vector that the agent will try to reach with its weights.
             self.dataset = np.copy(objectivePoint)
+            self.objective = self.dataset + np.ones(Config.VECTOR_DIMENSION) - np.random.rand(Config.VECTOR_DIMENSION) * 2
             self.optimizer = None
         else:
             self.nnModel = Net().to(device)
@@ -121,32 +122,36 @@ class nnAgent(mesa.Agent):
 
     def train_model(self):
         localLoss = 0
+        for i in range(Config.EPOCH_SHARE):
+            if Config.SIMULATION_MODE:
+                random_noise = (np.ones(Config.VECTOR_DIMENSION) - np.random.rand(Config.VECTOR_DIMENSION)*2) * Config.RANDOMNESS_SCALE
+                #Dataset is objective point, and self.nnModel is the actual vector.
+                
+                direction = self.objective - self.nnModel
+                movement = Config.ETA * direction + random_noise
+                
+                #movement = (self.dataset - self.objective) + random_noise
+                #normalizedMove = movement / np.linalg.norm(movement) if np.linalg.norm(movement) > 1 else movement
 
-        if Config.SIMULATION_MODE:
-            random_noise = (np.ones(Config.VECTOR_DIMENSION) - np.random.rand(Config.VECTOR_DIMENSION)*2) * Config.RANDOMNESS_SCALE
-            #Dataaset is objective point, and self.nnModel is the actual vector.
-            movement = (self.dataset - self.nnModel) + random_noise
-            normalizedMove = movement / np.linalg.norm(movement) if np.linalg.norm(movement) > 1 else movement
+                self.nnModel += movement #normalizedMove
 
-            self.nnModel += normalizedMove
-
-            #Euclidean distance as a loss.
-            localLoss = np.linalg.norm(self.dataset - self.nnModel)
-        else:
-            self.nnModel.train()
-            for batch_idx, (data, target) in enumerate(self.dataset):
-                data, target = data.to(device), target.to(device)
-                self.optimizer.zero_grad()
-                output = self.nnModel(data)
-                loss = F.nll_loss(output, target)
-                loss.backward()
-                self.optimizer.step()
-                localLoss += loss.item()
-                if batch_idx % 100 == 0:
-                    print('Train Iteration of agent {}: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                        self.unique_id,
-                        batch_idx * len(data), len(self.dataset.dataset),
-                        100. * batch_idx / len(self.dataset), loss.item()))
+                #Euclidean distance as a loss.
+                localLoss += np.linalg.norm(self.dataset - self.nnModel)
+            else:
+                self.nnModel.train()
+                for batch_idx, (data, target) in enumerate(self.dataset):
+                    data, target = data.to(device), target.to(device)
+                    self.optimizer.zero_grad()
+                    output = self.nnModel(data)
+                    loss = F.nll_loss(output, target)
+                    loss.backward()
+                    self.optimizer.step()
+                    localLoss += loss.item()
+                    if batch_idx % 100 == 0:
+                        print('Train Iteration of agent {}: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                            self.unique_id,
+                            batch_idx * len(data), len(self.dataset.dataset),
+                            100. * batch_idx / len(self.dataset), loss.item()))
         
         #Now check the experiment and logger
         if Config.log_Experiment:
@@ -200,15 +205,29 @@ class nnAgent(mesa.Agent):
         if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name):
             os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name)
 
-        #The format for the pandas is loss, density coalition, weights for simulated.
-        rowData = [loss, self.averageSimilarity] + list(self.nnModel)
 
-        columnsName = ['loss', 'density'] + [f'w{i}' for i in range(len(self.nnModel))]
+        #Add a colum with the number of neighbors, the neighbors, the similarity with them, the actual length of the coalition and Config.GRAPH_GRADE columns (can be empty) for the members of the coalition
+        num_neighbors = len(self.neighbors)
+        neighbor_names = [agent.agent_name for agent in self.neighbors]
+        neighbor_sims = [self.neighbor_info.get(name, -1) for name in neighbor_names]
+
+        coalition_names = [n[0] for n in self.coallitionNeighbors]
+        coalition_len = len(coalition_names)
+
+        coalition_mask = [1 if name in coalition_names else 0 for name in neighbor_names]
+
+        #Making it like this makes the tests reading afterwards more easy to do as they dont need to alternate
+        rowData = [loss, self.averageSimilarity, num_neighbors] + neighbor_names + neighbor_sims + [coalition_len] + coalition_mask + list(self.nnModel)
+
+        columnsName = ['loss', 'density', 'num_neighbors'] + [f'nNames{i}' for i in range(len(neighbor_names))] + [f'nRates{i}' for i in range(len(neighbor_sims))] + ["coalition_length"] + [f'isCoalition{i}' for i in range(len(coalition_mask))] + [f'w{i}' for i in range(len(self.nnModel))]
+        #print(len(rowData), len(columnsName))
         df_file = pd.DataFrame([rowData], columns=columnsName)
 
         fileName = "outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\expedient.csv"
         if not os.path.exists(fileName):
-            originalData = [-1, -1,] + list(np.copy(originalWeights))
+
+
+            originalData = [-1, -1, num_neighbors]  + neighbor_names + [-1]*num_neighbors + [num_neighbors] + [1]*num_neighbors + list(np.copy(originalWeights))
             originalFile = pd.DataFrame([originalData], columns=columnsName)
             originalFile.to_csv(fileName, index=False, mode='w')
         df_file.to_csv(fileName, index=False, mode='a', header=False)
@@ -221,14 +240,20 @@ class nnAgent(mesa.Agent):
         #We calculate the average similarity of the neighbors and if the influence of the neighbors is greater than the threshold we update the coalition excluding it.
         #That case only works if the distance is greater, because a distance 0 would be technically ideal.
         #self.averageSimilarity = sum(self.neighbor_info.values())/len(self.neighbor_info)
-        self.averageSimilarity = sum([similarity for name, similarity in self.neighbor_info.items() if name in [n[0] for n in self.coallitionNeighbors]])/len(self.coallitionNeighbors)
-
+        
+        if len(self.coallitionNeighbors) > 0:
+            if Config.SIMILARITY_MEASURE == "COSINE_SIMILARITY":
+                self.averageSimilarity = sum([similarity for name, similarity in self.neighbor_info.items() if name in [n[0] for n in self.coallitionNeighbors]])/len(self.coallitionNeighbors)
+            else:
+                self.averageSimilarity = abs(sum([similarity for name, similarity in self.neighbor_info.items() if name in [n[0] for n in self.coallitionNeighbors]]))/len(self.coallitionNeighbors)
+        else:
+            self.coallitionNeighbors.append(self.random.choice(list(self.neighbor_info.items()))[0])
         #Now we loop through the neighbors and see, all who are lower are automatically included. Anything above 1.5 times excluded, that value is on Config.threshold, but we can change it to be more or less strict.
         new_coalition = []
         for name, similarity in self.neighbor_info.items():
             #We check what type of measure we are using.
             if Config.IS_SIMILARITY:
-                if similarity > self.averageSimilarity * Config.threshold_similarity:
+                if similarity > self.averageSimilarity / Config.threshold_similarity:
                     new_coalition.append(name)
             else:
                 if similarity < self.averageSimilarity * Config.threshold_similarity:

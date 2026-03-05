@@ -65,6 +65,18 @@ def crossEntropy(A, B):
     return output
 
 
+def mse(A, B):
+    return F.mse_loss(A, B)
+
+from scipy.stats import wasserstein_distance
+import numpy as np
+def normalized_gemd(w1, w2):
+    # Normalización Min-Max para asegurar que los pesos 
+    # se comporten como una distribución "comparable"
+    w1_norm = (w1 - np.min(w1)) / (np.max(w1) - np.min(w1))
+    w2_norm = (w2 - np.min(w2)) / (np.max(w2) - np.min(w2))
+    return wasserstein_distance(w1_norm, w2_norm)
+
 def applySimilarity(A_dict, B_dict, similarity):
     #The simulation doesnt need normalization only be pytorch.
     if not Config.SIMULATION_MODE:
@@ -84,6 +96,8 @@ def applySimilarity(A_dict, B_dict, similarity):
         return indexOfJaccard(A_vector, B_vector, None, Config.EPSILON)
     elif similarity == "CROSS_ENTROPY":
         return crossEntropy(A_vector, B_vector)
+    elif similarity == "MSE":
+        return mse(A_vector, B_vector)
 
 
 #A = torch.tensor([[0.9091,  0.1296], [-0.3108, -2.4423]])    

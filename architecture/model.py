@@ -45,6 +45,7 @@ class FederatedModel(mesa.Model):
         else:
             self.agents.do("mixing_Weights")
         self.agents.shuffle_do("train_model")
+
         self.agents.shuffle_do("pass_weights")
 
         print(f"Epoch {self.epoch} completed.")

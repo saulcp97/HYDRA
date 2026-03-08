@@ -1,6 +1,16 @@
 import Config
+import torch
 import pandas as pd
 import numpy as np
+
+
+def singleNormalization(dictionary_A):
+    vector_A = torch.tensor([])
+    for e in list(dictionary_A.keys()):
+        tensor_A = dictionary_A[e].cpu()
+        flattened_A = torch.flatten(tensor_A)
+        vector_A = torch.cat((vector_A, flattened_A), 0)
+    return vector_A
 
 def calculate_federated_metrics():
     all_agents_data = {}
@@ -213,7 +223,7 @@ def calculateExperimentResults():
     # 0. Average data loading.
     all_agents_data = {}
     agent_weights = {} 
-
+    listOfErrors = []
     for agent_id in range(len(Config.AGENT_NAMES)):
         agent_name = f"scp_{agent_id}"
         path = f"outputs/{Config.experiment_name}/{agent_name}/expedient.csv"
@@ -221,8 +231,15 @@ def calculateExperimentResults():
         last_row = df.iloc[-1]
         all_agents_data[agent_name] = last_row
         
-        # 'Crude' Weight extraction
-        agent_weights[agent_name] = last_row[-Config.VECTOR_DIMENSION:].values.astype(float)
+        listOfErrors.append(np.sum(df["loss"]))
+
+        # 'Crude' Weight extraction, we
+        if Config.SIMULATION_MODE:
+            agent_weights[agent_name] = last_row[-Config.VECTOR_DIMENSION:].values.astype(float)
+        else:
+            pathWeights = f"outputs/{Config.experiment_name}/{agent_name}/iteration_{str(Config.EPOCH_NUM-1)}/weights.pth"
+            weights = torch.load(pathWeights)
+            agent_weights[agent_name] = singleNormalization(weights)
 
     # 0.5 Determine the Metrics to return
     finalCoalitionSize, finalCoalitionSizeSTD = 0, 0
@@ -234,11 +251,9 @@ def calculateExperimentResults():
 
     # Axuiliar Variables
     total_coalition_size = 0
-    sumTrainError = 0
     reciprocity_matches = 0
     total_possible_links = 0
     coaltion_Sizes = []
-    listOfErrors = []
 
     agent_intra_coalition_distances = []
 
@@ -250,10 +265,7 @@ def calculateExperimentResults():
         # A. Average Coalition Size
         total_coalition_size += rows['coalition_length']
         coaltion_Sizes.append(rows['coalition_length'])
-        # B. Loss Calculations
-        sumTrainError += rows['loss']
-        listOfErrors.append(rows['loss'])
-
+    
         # C. Reciprocity Percentage
         num_n = int(rows['num_neighbors'])
         neighbor_names_list = rows.iloc[3 : 3 + num_n].values
@@ -315,7 +327,7 @@ def calculateExperimentResults():
     finalCoalitionSize = total_coalition_size / num_agents 
     finalCoalitionSizeSTD = np.std(coaltion_Sizes)
            
-    finalTrainError = sumTrainError / num_agents 
+    finalTrainError = np.mean(listOfErrors)
     finalTrainErrorSTD = np.std(listOfErrors)
 
     reciprocityPercentage = (reciprocity_matches / total_possible_links * 100) if total_possible_links > 0 else 0
@@ -344,9 +356,13 @@ def calculateExperimentResults():
     
     print(f"Coalition Divergence (Media de densidades): {coalitionDivergence:.4f}±{coalitionDivergenceSTD:.4f}")
     print(f"Distancia media entre puntos de convergencia (Separación): {convergedDistance:.4f}±{convergedDistanceSTD:.4f}")
-    
+
     print(f"Average Final Error: {finalTrainError:.4f}±{finalTrainErrorSTD:.4f}")
     print(f"Reciprocity Percentage: {reciprocityPercentage:.4f}%")
+    #accuracy_test
+    #training_loss hecho
+    #auc (mira papers de FL sobre clasificación)
+
 
 import networkx as nx
 def contarCoalicionesOfIter(iter):
@@ -465,13 +481,9 @@ def plotCoalitionsOfExperiment():
 
 def plotCoalitionsOfExperimentList():
 
-    measuresNames = ["Euclidean Distance", "Cosine Similarity", "Jaccard Index", "Mean Square Error", "Cross Entropy Loss"]
+    measuresNames = ["MSE"]
     experimentList = [
-        "simulated_experiment_1000agents_euclidean",
-        "simulated_experiment_1000agents_cosine",
-        "simulated_experiment_1000agents_jaccard",
-        "simulated_experiment_1000agents_MSE",
-        "simulated_experiment_1000agents_crossEntropy"
+        "experiment_FMNIST_MSE"
     ]
 
     dataExperiment = {}

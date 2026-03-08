@@ -27,3 +27,17 @@ class Net(nn.Module):
         x = self.fc2(x)
         output = F.log_softmax(x, dim=1)
         return output
+
+    
+class TinyMLP(nn.Module):
+    def __init__(self, in_dim, num_classes):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(0.20),
+            nn.Linear(64, num_classes),
+        )
+
+    def forward(self, x):
+        return self.net(x)

@@ -3,11 +3,13 @@ import mesa
 from architecture.agents import nnAgent
 import Config
 
+from sklearn.metrics import roc_auc_score
+
 
 class FederatedModel(mesa.Model):
     """A model with some number of agents."""
 
-    def __init__(self, n=10, seed=None):
+    def __init__(self, n=10, seed=Config.SIMULATION_SEED):
         super().__init__(seed=seed)
         self.num_agents = n
         # Create agents
@@ -40,13 +42,21 @@ class FederatedModel(mesa.Model):
         # then iterates through calling the function passed in as the parameter
 
         #Can use either do or shuffle do because we separated the steps to do in 3 states so they dont have priority order
+        
         if self.epoch == 0:
             self.agents.do("calibrateNeihborhood")
         else:
             self.agents.do("mixing_Weights")
         self.agents.shuffle_do("train_model")
-
         self.agents.shuffle_do("pass_weights")
 
         print(f"Epoch {self.epoch} completed.")
         self.epoch += 1
+
+    def rate_global_scores(self):
+        accuracy = []
+        auc = []
+        for agent in self.agents:
+            accuracy.append(agent.accuracyTest())
+            auc.append(agent.aucTest())
+        return accuracy, auc

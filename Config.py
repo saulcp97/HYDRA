@@ -6,7 +6,9 @@ xmpp_server = "localhost"
 
 DEFAULT_TIMER = 20
 
-BATCH_SIZE = 64
+BATCH_SIZE = 1024
+
+dirichlet_alpha=0.3
 
 # Max SPADE message body length (aioxmpp limit is 256 * 1024)
 max_message_body_length = 150_000
@@ -33,8 +35,8 @@ EPSILON_LOGGER = "EPSILON_LOGGER"
 TRAINING_TIME_LOGGER = "TRAINING_TIME_LOGGER"
 COALITION_LOGGER = "COALITION_LOGGER"
 EPOCH_NUM = 100
-EPOCH_SHARE = 4
-NUMBER_OF_AGENTS = 1000
+EPOCH_SHARE = 1
+NUMBER_OF_AGENTS = 10
 coalition_index1_Classes = [0,1,2,3,4]
 coalition_index2_Classes = [5,6,7,8,9]
 
@@ -48,10 +50,10 @@ SIMILARITY_MEASURE = "MSE"
 #Boolean var to show if the measure is similarity or distance, to know if we want to maximize or minimize it.
 IS_SIMILARITY = False
 #Normally a 1.5 or 1.6 is used but this value is more forgiving.
-threshold_similarity = 1.75
+threshold_similarity = 1.50
 
 EPSILON = 0.1
-DEFAULT_SIMILARITY = -1
+DEFAULT_SIMILARITY = 0
 coalitions = [["0", "1", "2", "3", "4"], ["5", "6", "7", "8", "9"]]
 
 #IID or Non-IID configuration variables
@@ -70,7 +72,7 @@ iid_distribution = [
     [5, 6, 7, 8, 9], # Agente 9
 ]
 
-experiment_name = "simulated_experiment_1000agents_euclidean_1_25"
+experiment_name = "experiment_FMNIST_MSE_Inestable_experimental"
 log_Experiment = True
 PREFIX = "scp_"
 
@@ -80,6 +82,8 @@ NEIGHBOURS = {}
 Iteration_FALL = 50
 
 #AGENT_NAMES = ["a0", "a1"]
+SAVE_NEGATIVE_EPOCH = False
+
 
 coalition_Color_Dictionary = {
     0: "red",
@@ -97,7 +101,7 @@ coalition_Color_Dictionary = {
 #Configuration variables for the Simulation Mode.
 #Simulation mode changes the agent behavior, so instead of doing actual training they just simulate a fake version
 #of gradient descent.
-SIMULATION_MODE = True
+SIMULATION_MODE = False
 VECTOR_DIMENSION = 100
 RANDOMNESS_SCALE = 0.5
 SIMULATION_SEED = 42

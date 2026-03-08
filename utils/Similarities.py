@@ -34,6 +34,16 @@ def applyNormalization(dictionary_A, dictionary_B):
 
     return vector_A, vector_B
 
+#For design this should in theory only being used by
+def singleNormalization(dictionary_A):
+    vector_A = torch.tensor([])
+    for e in list(dictionary_A.keys()):
+        tensor_A = dictionary_A[e]
+        if tensor_A.device != vector_A.device:
+            vector_A = vector_A.to(tensor_A.device)
+        flattened_A = torch.flatten(tensor_A)
+        vector_A = torch.cat((vector_A, flattened_A), 0)
+    return vector_A
 
 def cosineSimilarity(A, B):
     normalized_A = F.normalize(A, dim=0)

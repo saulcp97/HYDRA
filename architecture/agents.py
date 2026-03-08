@@ -7,7 +7,9 @@ from torchvision import datasets, transforms
 from torch.utils.data import random_split
 import utils.Similarities as Similarities
 
-from architecture.dataLoader import get_data_loaders
+from architecture.dataLoader import get_DryBeanDS, getModelsParams
+
+from sklearn.metrics import roc_auc_score
 
 import os
 import Config
@@ -28,25 +30,69 @@ else:
 def rateSimilarity(A, B):
     return Similarities.applySimilarity(A, B, Config.SIMILARITY_MEASURE)
 
+
+@torch.no_grad()
+def accuracy(model, loader, device):
+    model.eval()
+    correct = total = 0
+    for xb, yb in loader:
+        xb, yb = xb.to(device), yb.to(device)
+        pred = model(xb).argmax(dim=1)
+        correct += (pred == yb).sum().item()
+        total += yb.numel()
+    return correct / total
+
+@torch.no_grad()
+def auc_score(model, loader, device):
+    model.eval()
+    all_probs = []
+    all_labels = []
+    
+    for xb, yb in loader:
+        xb, yb = xb.to(device), yb.to(device)
+        
+        # IMPORTANTE: Usamos Softmax para obtener probabilidades, no argmax
+        outputs = model(xb)
+        probs = torch.softmax(outputs, dim=1)
+        
+        all_probs.append(probs.cpu())
+        all_labels.append(yb.cpu())
+    
+    # Concatenamos todo en dos tensores grandes
+    all_probs = torch.cat(all_probs).numpy()
+    all_labels = torch.cat(all_labels).numpy()
+    
+    # Calculamos el AUC multiclase (One-vs-Rest)
+    return roc_auc_score(all_labels, all_probs, multi_class='ovr', average='macro')
+
 #Implementación de FLaMAS (Average)
-def average_weights(A, B, eps = 0.5):
+#A is invited weight
+#B is own weight
+def average_weights(A, B):
+    eps = 1 / Config.GRAPH_GRADE
     average_weights = B
     for key in B.keys():
         if len(B[key]) != len(A[key]):
             print("Error - consensus can only be applied to arrays of same length")
             return None
-        average_weights[key] = B[key] + eps*(A[key] - B[key])
+        average_weights[key] = (1-eps) * B[key] + eps * A[key]
     print("Pesos influenciados")
     return average_weights
 
 
-from architecture.neuralNetwork import Net
-#originalWeights = Net().to(device).state_dict()
-np.random.seed(Config.SIMULATION_SEED)
-originalWeights = np.random.rand(Config.VECTOR_DIMENSION)
-#Dataset is not a real dataset, but the random target vector that the agent will try to reach with its weights.
-objective = np.ones(Config.VECTOR_DIMENSION) - np.random.rand(Config.VECTOR_DIMENSION) * 2
-objectivePoint = originalWeights + objective/np.linalg.norm(objective) * (Config.EPOCH_NUM)
+from architecture.neuralNetwork import TinyMLP
+
+originalWeights = None
+if Config.SIMULATION_MODE:
+    np.random.seed(Config.SIMULATION_SEED)
+    originalWeights = np.random.rand(Config.VECTOR_DIMENSION)
+
+    #Dataset is not a real dataset, but the random target vector that the agent will try to reach with its weights.
+    objective = np.ones(Config.VECTOR_DIMENSION) - np.random.rand(Config.VECTOR_DIMENSION) * 2
+    objectivePoint = originalWeights + objective/np.linalg.norm(objective) * (Config.EPOCH_NUM)
+else:
+    originalWeights = TinyMLP(*getModelsParams()).to(device).state_dict()
+
 
 class nnAgent(mesa.Agent):
     """An agent with fixed initial wealth."""
@@ -54,6 +100,9 @@ class nnAgent(mesa.Agent):
     def __init__(self, model):
         # Pass the parameters to the parent class.
         super().__init__(model)
+
+        self.selfID = self.unique_id-1
+        self.agent_name = "scp_" + str(self.selfID)
 
         if Config.SIMULATION_MODE:
             #To ensure the same random weights for all the agents, we can use the unique_id as a seed for the random generator.
@@ -64,17 +113,14 @@ class nnAgent(mesa.Agent):
             self.objective = self.dataset + np.ones(Config.VECTOR_DIMENSION) - np.random.rand(Config.VECTOR_DIMENSION) * 2
             self.optimizer = None
         else:
-            self.nnModel = Net().to(device)
+            self.nnModel = TinyMLP(*getModelsParams()).to(device)
             self.nnModel.load_state_dict(originalWeights)
         
-            self.dataset, _ = get_data_loaders(self)
+            self.dataset, self.valset, self.testset = get_DryBeanDS(self.selfID, 0.2)
             #torch.utils.data.DataLoader(train_set, 512, False)
-            self.optimizer = optim.Adadelta(self.nnModel.parameters(), lr=0.5)
-        
+            self.optimizer = optim.AdamW(self.nnModel.parameters(), lr=3e-3, weight_decay=1e-3)
+            self.loss_fn = nn.CrossEntropyLoss()
         self.inWeightBuffer = []
-
-        self.selfID = self.unique_id-1
-        self.agent_name = "scp_" + str(self.selfID)
 
         #Only used for the random weight changes
         self.neighbors = None
@@ -94,7 +140,7 @@ class nnAgent(mesa.Agent):
         for name, agent in self.neighborhood:
             self.neighbors.append(agent)
             self.coallitionNeighbors.append((name, agent))
-            self.neighbor_info[name] = (-1)
+            self.neighbor_info[name] = (0)
 
         #Now calibrate the coa
 
@@ -115,13 +161,20 @@ class nnAgent(mesa.Agent):
             else:
                 similarity = rateSimilarity(aux[1], self.nnModel.state_dict())
                 self.neighbor_info[aux[0]] = (similarity)
-                #Epsilon is maximum 1 / number of neighbors.
-                weight = average_weights(aux[1], self.nnModel.state_dict(), eps= 1/len(self.neighborhood))
+
+                weight = average_weights(aux[1], self.nnModel.state_dict())
                 self.nnModel.load_state_dict(weight)
+
+                #Now pick do consensus with the other
+                otherWeight = average_weights(self.nnModel.state_dict(), aux[1])
+                agentB = [agent for agent in self.neighbors if agent.agent_name == aux[0]][0]
+
+                agentB.nnModel.load_state_dict(otherWeight)
 
 
     def train_model(self):
         localLoss = 0
+        train_loss = 0
         for i in range(Config.EPOCH_SHARE):
             if Config.SIMULATION_MODE:
                 random_noise = (np.ones(Config.VECTOR_DIMENSION) - np.random.rand(Config.VECTOR_DIMENSION)*2) * Config.RANDOMNESS_SCALE
@@ -138,20 +191,26 @@ class nnAgent(mesa.Agent):
                 #Euclidean distance as a loss.
                 localLoss += np.linalg.norm(self.dataset - self.nnModel)
             else:
+
                 self.nnModel.train()
                 for batch_idx, (data, target) in enumerate(self.dataset):
                     data, target = data.to(device), target.to(device)
                     self.optimizer.zero_grad()
                     output = self.nnModel(data)
-                    loss = F.nll_loss(output, target)
+                    loss = self.loss_fn(output, target)
                     loss.backward()
                     self.optimizer.step()
-                    localLoss += loss.item()
+                    localLoss += loss.item() * target.size(0)
+                    """
                     if batch_idx % 100 == 0:
                         print('Train Iteration of agent {}: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                             self.unique_id,
                             batch_idx * len(data), len(self.dataset.dataset),
                             100. * batch_idx / len(self.dataset), loss.item()))
+                    """
+                train_loss += localLoss / len(self.dataset.dataset)
+                val_acc = accuracy(self.nnModel, self.valset, device)
+                print(f"Agent {self.unique_id}, Epoch {self.model.epoch}  train_loss={train_loss:.4f}  val_acc={val_acc:.4f}")
         
         #Now check the experiment and logger
         if Config.log_Experiment:
@@ -165,7 +224,7 @@ class nnAgent(mesa.Agent):
                 os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name)
 
             if Config.SIMULATION_MODE:
-                self.save_csv_iteration(localLoss)
+                self.save_csv_iteration(train_loss)
                 #Save also the coalition members of the agent this iteration
                 """
                 iteration = self.model.epoch
@@ -178,16 +237,16 @@ class nnAgent(mesa.Agent):
                         """
 
             else:
+                self.save_csv_iteration(train_loss, False)
                 iteration = self.model.epoch
                 if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration)):
                     os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration))
 
                 torch.save(self.nnModel.state_dict(), "outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\weights.pth")
-            
-                with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\loss.txt", "w") as f:
-                    f.write(str(localLoss))
 
                 #Save also the coalition members of the agent this iteration
+
+                """
                 with open("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration) + "\\coalition.txt", "w") as f:
                     result = "Coalition members: \n"
                     for name, _ in self.coallitionNeighbors:
@@ -195,8 +254,9 @@ class nnAgent(mesa.Agent):
                     #Add the self.averageSimilarity to the log for analysis
                     result += "Average Similarity: " + str(self.averageSimilarity) + "\n"
                     f.write(result)
+                """
 
-    def save_csv_iteration(self, loss):
+    def save_csv_iteration(self, loss, saveWeights=True):
         #Check if the file exists, if not, we create it.
         if not os.path.exists("outputs\\" + Config.experiment_name):
             os.makedirs("outputs\\" + Config.experiment_name)
@@ -217,20 +277,30 @@ class nnAgent(mesa.Agent):
         coalition_mask = [1 if name in coalition_names else 0 for name in neighbor_names]
 
         #Making it like this makes the tests reading afterwards more easy to do as they dont need to alternate
-        rowData = [loss, self.averageSimilarity, num_neighbors] + neighbor_names + neighbor_sims + [coalition_len] + coalition_mask + list(self.nnModel)
-
-        columnsName = ['loss', 'density', 'num_neighbors'] + [f'nNames{i}' for i in range(len(neighbor_names))] + [f'nRates{i}' for i in range(len(neighbor_sims))] + ["coalition_length"] + [f'isCoalition{i}' for i in range(len(coalition_mask))] + [f'w{i}' for i in range(len(self.nnModel))]
+        rowData = [loss, self.averageSimilarity, num_neighbors] + neighbor_names + neighbor_sims + [coalition_len] + coalition_mask
+        columnsName = ['loss', 'density', 'num_neighbors'] + [f'nNames{i}' for i in range(len(neighbor_names))] + [f'nRates{i}' for i in range(len(neighbor_sims))] + ["coalition_length"] + [f'isCoalition{i}' for i in range(len(coalition_mask))]
+        
+        if saveWeights:
+            rowData = [loss, self.averageSimilarity, num_neighbors] + neighbor_names + neighbor_sims + [coalition_len] + coalition_mask + list(self.nnModel)
+            columnsName = ['loss', 'density', 'num_neighbors'] + [f'nNames{i}' for i in range(len(neighbor_names))] + [f'nRates{i}' for i in range(len(neighbor_sims))] + ["coalition_length"] + [f'isCoalition{i}' for i in range(len(coalition_mask))] + [f'w{i}' for i in range(len(self.nnModel))]
         #print(len(rowData), len(columnsName))
         df_file = pd.DataFrame([rowData], columns=columnsName)
 
         fileName = "outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\expedient.csv"
+        saved = False
         if not os.path.exists(fileName):
-
-
-            originalData = [-1, -1, num_neighbors]  + neighbor_names + [-1]*num_neighbors + [num_neighbors] + [1]*num_neighbors + list(np.copy(originalWeights))
-            originalFile = pd.DataFrame([originalData], columns=columnsName)
-            originalFile.to_csv(fileName, index=False, mode='w')
-        df_file.to_csv(fileName, index=False, mode='a', header=False)
+            if Config.SAVE_NEGATIVE_EPOCH:
+                originalData = [-1, -1, num_neighbors]  + neighbor_names + [-1]*num_neighbors + [num_neighbors] + [1]*num_neighbors
+                if saveWeights:
+                    originalData = [-1, -1, num_neighbors]  + neighbor_names + [-1]*num_neighbors + [num_neighbors] + [1]*num_neighbors + list(np.copy(originalWeights))
+                
+                originalFile = pd.DataFrame([originalData], columns=columnsName)
+                originalFile.to_csv(fileName, index=False, mode='w')
+            else:
+                originalFile = pd.DataFrame([rowData], columns=columnsName)
+                originalFile.to_csv(fileName, index=False, mode='w')
+        if not saved:
+            df_file.to_csv(fileName, index=False, mode='a', header=False)
 
 
     def checkSelfCoalition(self):
@@ -243,22 +313,27 @@ class nnAgent(mesa.Agent):
         
         if len(self.coallitionNeighbors) > 0:
             if Config.SIMILARITY_MEASURE == "COSINE_SIMILARITY":
-                self.averageSimilarity = sum([similarity for name, similarity in self.neighbor_info.items() if name in [n[0] for n in self.coallitionNeighbors]])/len(self.coallitionNeighbors)
+                self.averageSimilarity = sum([similarity for name, similarity in self.neighbor_info.items()])/len(self.neighbor_info)
             else:
-                self.averageSimilarity = abs(sum([similarity for name, similarity in self.neighbor_info.items() if name in [n[0] for n in self.coallitionNeighbors]]))/len(self.coallitionNeighbors)
+                self.averageSimilarity = abs(sum([similarity for name, similarity in self.neighbor_info.items()]))/len(self.neighbor_info)
+        
+            #Now we loop through the neighbors and see, all who are lower are automatically included. Anything above 1.5 times excluded, that value is on Config.threshold, but we can change it to be more or less strict.
+            new_coalition = []
+            for name, similarity in self.neighbor_info.items():
+                #We check what type of measure we are using.
+                if Config.IS_SIMILARITY:
+                    if similarity > self.averageSimilarity / Config.threshold_similarity:
+                        new_coalition.append(name)
+                else:
+                    if similarity < self.averageSimilarity * Config.threshold_similarity:
+                        new_coalition.append(name)
+            self.coallitionNeighbors = [(name, agent) for name, agent in self.coallitionNeighbors if name in new_coalition]
         else:
-            self.coallitionNeighbors.append(self.random.choice(list(self.neighbor_info.items()))[0])
-        #Now we loop through the neighbors and see, all who are lower are automatically included. Anything above 1.5 times excluded, that value is on Config.threshold, but we can change it to be more or less strict.
-        new_coalition = []
-        for name, similarity in self.neighbor_info.items():
-            #We check what type of measure we are using.
-            if Config.IS_SIMILARITY:
-                if similarity > self.averageSimilarity / Config.threshold_similarity:
-                    new_coalition.append(name)
-            else:
-                if similarity < self.averageSimilarity * Config.threshold_similarity:
-                    new_coalition.append(name)
-        self.coallitionNeighbors = [(name, agent) for name, agent in self.coallitionNeighbors if name in new_coalition]
+            #If there is no one in the coallition everybody is in the coalition
+            #Shouldnt be done light that but this is a quick patch
+            self.coallitionNeighbors = [(agent.agent_name, agent) for agent in self.neighbors]
+
+
 
     def pass_weights(self):
         #First of all decide what coallition the agent it is:
@@ -278,3 +353,9 @@ class nnAgent(mesa.Agent):
                 other_agent.receiveWeight((self.agent_name, self.nnModel))
             else:
                 other_agent.receiveWeight((self.agent_name, self.nnModel.state_dict()))
+
+    def accuracyTest(self):
+        return accuracy(self.nnModel, self.testset, device)
+    
+    def aucTest(self):
+        return auc_score(self.nnModel, self.testset, device)

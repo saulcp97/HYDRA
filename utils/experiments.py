@@ -224,6 +224,8 @@ def calculateExperimentResults():
     all_agents_data = {}
     agent_weights = {} 
     listOfErrors = []
+    listOfAccuracies = []
+    listOfAucs = []
     for agent_id in range(len(Config.AGENT_NAMES)):
         agent_name = f"scp_{agent_id}"
         path = f"outputs/{Config.experiment_name}/{agent_name}/expedient.csv"
@@ -232,6 +234,12 @@ def calculateExperimentResults():
         all_agents_data[agent_name] = last_row
         
         listOfErrors.append(np.sum(df["loss"]))
+        
+        # Load accuracy and AUC if they exist in the CSV
+        if "accuracy" in df.columns:
+            listOfAccuracies.append(last_row["accuracy"])
+        if "auc" in df.columns:
+            listOfAucs.append(last_row["auc"])
 
         # 'Crude' Weight extraction, we
         if Config.SIMULATION_MODE:
@@ -247,6 +255,8 @@ def calculateExperimentResults():
     coalitionDivergence, coalitionDivergenceSTD = 0, 0
     convergedDistance, convergedDistanceSTD = 0, 0
     finalTrainError, finalTrainErrorSTD = 0, 0
+    finalAccuracy, finalAccuracySTD = 0, 0
+    finalAuc, finalAucSTD = 0, 0
     reciprocityPercentage = 0
 
     # Axuiliar Variables
@@ -329,6 +339,14 @@ def calculateExperimentResults():
            
     finalTrainError = np.mean(listOfErrors)
     finalTrainErrorSTD = np.std(listOfErrors)
+    
+    # Calculate accuracy and AUC metrics if available
+    if listOfAccuracies:
+        finalAccuracy = np.mean(listOfAccuracies)
+        finalAccuracySTD = np.std(listOfAccuracies)
+    if listOfAucs:
+        finalAuc = np.mean(listOfAucs)
+        finalAucSTD = np.std(listOfAucs)
 
     reciprocityPercentage = (reciprocity_matches / total_possible_links * 100) if total_possible_links > 0 else 0
 
@@ -358,10 +376,17 @@ def calculateExperimentResults():
     print(f"Distancia media entre puntos de convergencia (Separación): {convergedDistance:.4f}±{convergedDistanceSTD:.4f}")
 
     print(f"Average Final Error: {finalTrainError:.4f}±{finalTrainErrorSTD:.4f}")
+    if listOfAccuracies:
+        print(f"Average Accuracy: {finalAccuracy:.4f}±{finalAccuracySTD:.4f}")
+    if listOfAucs:
+        print(f"Average AUC: {finalAuc:.4f}±{finalAucSTD:.4f}")
     print(f"Reciprocity Percentage: {reciprocityPercentage:.4f}%")
-    #accuracy_test
-    #training_loss hecho
-    #auc (mira papers de FL sobre clasificación)
+    
+    # Return metrics for use in other functions
+    return (finalCoalitionSize, finalCoalitionSizeSTD, finalTrainError, finalTrainErrorSTD,
+            intraCoalitionDist, intraCoalitionDistSTD, coalitionDivergence, coalitionDivergenceSTD,
+            convergedDistance, convergedDistanceSTD, reciprocityPercentage,
+            finalAccuracy, finalAccuracySTD, finalAuc, finalAucSTD)
 
 
 import networkx as nx

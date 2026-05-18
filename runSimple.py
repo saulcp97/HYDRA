@@ -38,16 +38,20 @@ if __name__ == "__main__":
 
     #Experiment interpretation:
 
-    calculateExperimentResults()
-    import numpy as np
-    rates, aucs = starter_model.rate_global_scores()
-    avgAcuracy = np.mean(rates)
-    stdAccuracy = np.std(rates)
-
-    avgAucs = np.mean(aucs)
-    stdAucs = np.std(aucs)
-    print(f"Average Accuracy {avgAcuracy} +- STD {stdAccuracy}")
-    print(f"Average Area Under the Curve {avgAucs} +- STD {stdAucs}")
+    results = calculateExperimentResults()
+    
+    # Unpack results: metrics are returned as a tuple
+    (finalCoalitionSize, finalCoalitionSizeSTD, finalTrainError, finalTrainErrorSTD,
+     intraCoalitionDist, intraCoalitionDistSTD, coalitionDivergence, coalitionDivergenceSTD,
+     convergedDistance, convergedDistanceSTD, reciprocityPercentage,
+     finalAccuracy, finalAccuracySTD, finalAuc, finalAucSTD) = results
+    
+    # Print loaded accuracy and AUC with standard deviation
+    if finalAccuracy > 0:
+        print(f"Average Accuracy {finalAccuracy:.4f} +- STD {finalAccuracySTD:.4f}")
+    if finalAuc > 0:
+        print(f"Average Area Under the Curve {finalAuc:.4f} +- STD {finalAucSTD:.4f}")
+    
     #plotCoalitionsOfExperimentList()
     #plotCoalitionsOfExperimentList()
     if Config.SIMULATION_MODE:

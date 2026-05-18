@@ -237,7 +237,10 @@ class nnAgent(mesa.Agent):
                         """
 
             else:
-                self.save_csv_iteration(train_loss, False)
+                # Calculate accuracy and AUC on test set
+                test_accuracy = self.accuracyTest()
+                test_auc = self.aucTest()
+                self.save_csv_iteration(train_loss, False, accuracy=test_accuracy, auc=test_auc)
                 iteration = self.model.epoch
                 if not os.path.exists("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration)):
                     os.makedirs("outputs\\" + Config.experiment_name + "\\" + self.agent_name + "\\iteration_" + str(iteration))
@@ -256,7 +259,7 @@ class nnAgent(mesa.Agent):
                     f.write(result)
                 """
 
-    def save_csv_iteration(self, loss, saveWeights=True):
+    def save_csv_iteration(self, loss, saveWeights=True, accuracy=None, auc=None):
         #Check if the file exists, if not, we create it.
         if not os.path.exists("outputs\\" + Config.experiment_name):
             os.makedirs("outputs\\" + Config.experiment_name)
@@ -280,9 +283,17 @@ class nnAgent(mesa.Agent):
         rowData = [loss, self.averageSimilarity, num_neighbors] + neighbor_names + neighbor_sims + [coalition_len] + coalition_mask
         columnsName = ['loss', 'density', 'num_neighbors'] + [f'nNames{i}' for i in range(len(neighbor_names))] + [f'nRates{i}' for i in range(len(neighbor_sims))] + ["coalition_length"] + [f'isCoalition{i}' for i in range(len(coalition_mask))]
         
+        # Add accuracy and AUC to rowData and columnsName
+        if accuracy is not None:
+            rowData.append(accuracy)
+            columnsName.append('accuracy')
+        if auc is not None:
+            rowData.append(auc)
+            columnsName.append('auc')
+        
         if saveWeights:
-            rowData = [loss, self.averageSimilarity, num_neighbors] + neighbor_names + neighbor_sims + [coalition_len] + coalition_mask + list(self.nnModel)
-            columnsName = ['loss', 'density', 'num_neighbors'] + [f'nNames{i}' for i in range(len(neighbor_names))] + [f'nRates{i}' for i in range(len(neighbor_sims))] + ["coalition_length"] + [f'isCoalition{i}' for i in range(len(coalition_mask))] + [f'w{i}' for i in range(len(self.nnModel))]
+            rowData = rowData + list(self.nnModel)
+            columnsName = columnsName + [f'w{i}' for i in range(len(self.nnModel))]
         #print(len(rowData), len(columnsName))
         df_file = pd.DataFrame([rowData], columns=columnsName)
 
@@ -291,8 +302,12 @@ class nnAgent(mesa.Agent):
         if not os.path.exists(fileName):
             if Config.SAVE_NEGATIVE_EPOCH:
                 originalData = [-1, -1, num_neighbors]  + neighbor_names + [-1]*num_neighbors + [num_neighbors] + [1]*num_neighbors
+                if accuracy is not None:
+                    originalData.append(-1)
+                if auc is not None:
+                    originalData.append(-1)
                 if saveWeights:
-                    originalData = [-1, -1, num_neighbors]  + neighbor_names + [-1]*num_neighbors + [num_neighbors] + [1]*num_neighbors + list(np.copy(originalWeights))
+                    originalData = originalData + list(np.copy(originalWeights))
                 
                 originalFile = pd.DataFrame([originalData], columns=columnsName)
                 originalFile.to_csv(fileName, index=False, mode='w')

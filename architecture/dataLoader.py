@@ -154,12 +154,19 @@ def sanity_check_partitions(client_indices, total_samples):
     print("partition_sanity_check = PASSED")
 
 
-def get_DryBeanDS(agentId, local_val_frac):
+def get_DryBeanDS(agentId, local_val_frac, config=None):
+    config = config or Config
     client_indices = None
-    if Config.IID: # iid mode
-        client_indices = partition_iid(y_train, Config.NUMBER_OF_AGENTS, seed=Config.SIMULATION_SEED)
+    if config.IID: # iid mode
+        client_indices = partition_iid(y_train, config.NUMBER_OF_AGENTS, seed=config.SIMULATION_SEED)
     else:
-        client_indices = partition_dirichlet(y_train, Config.NUMBER_OF_AGENTS, alpha=Config.dirichlet_alpha, seed=Config.SIMULATION_SEED, min_size=64)
+        client_indices = partition_dirichlet(
+            y_train,
+            config.NUMBER_OF_AGENTS,
+            alpha=config.dirichlet_alpha,
+            seed=config.SIMULATION_SEED,
+            min_size=64,
+        )
  
     # Sanity check (no overlap, full coverage)
     sanity_check_partitions(client_indices, len(y_train))
@@ -167,130 +174,9 @@ def get_DryBeanDS(agentId, local_val_frac):
     indices_del_agente = client_indices[agentId]
 
     ds = TabDataset(X_train[indices_del_agente], y_train[indices_del_agente])
-    dl = DataLoader(ds, batch_size=Config.BATCH_SIZE, shuffle=True)
+    dl = DataLoader(ds, batch_size=config.BATCH_SIZE, shuffle=True)
    
     return dl, test_loader, test_loader
 
 def getModelsParams():
     return X_all.shape[1], num_classes
-
-
-"""
-transform=transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
-])
-
-data_set = datasets.MNIST('../data', train=True, download=True, transform=transform)
-
-train_len = int(len(data_set)*0.95)
-#Test set isnt used at the moment
-train_set, test_set = random_split(data_set, [train_len, len(data_set)- train_len])
-
-#If classes_per_agent is None, then IID default partition is used even if iid=False
-#Classes per agent is the list of classes that id_agent will recieve, on custom_distribution id_agent = 0, would be [0,1]
-def get_federated_dataset(dataset:Subset, iid=True, classes_per_agent=None):
-    if iid or classes_per_agent is None:
-        # IID: Mezcla total y división equitativa
-        return dataset
-    else:
-        # Non-IID: Cada agente recibe un subconjunto específico de clases
-
-        targets = np.array(dataset.dataset.targets)[dataset.indices]
-        # Seleccionar clases específicas para este agente
-        idx_by_label = {k: np.where(targets == k)[0].tolist() for k in range(len(dataset.dataset.classes))}
-
-        selected_indices = []
-        for cls in classes_per_agent:
-            selected_indices.extend(idx_by_label[cls])
-        # Crear un Subset del dataset original con los índices seleccionados
-        subset = Subset(dataset.dataset, selected_indices)
-        print(f"Subset creado con {len(subset)} muestras para clases {classes_per_agent}")
-
-        return subset
-
-
-# Agent from architecture/agents.py
-# Rest of the options for the data Loader are default or from Config.py
-def get_data_loaders(agent):
-    train_setA = get_federated_dataset(train_set, iid=False, classes_per_agent=Config.iid_distribution[agent.selfID])
-    train_setB = get_federated_dataset(test_set, iid=False, classes_per_agent=Config.iid_distribution[agent.selfID])
-
-    train_loader = torch.utils.data.DataLoader(train_setA, Config.BATCH_SIZE, False)
-    test_loader = torch.utils.data.DataLoader(train_setB, Config.BATCH_SIZE, False)
-
-    return train_loader, test_loader
-
-
-train_full = datasets.FashionMNIST(root="./data", train=True, download=True, transform=transform)
-
-targets = np.asarray(train_full.targets, dtype=np.int64)
-idx = np.arange(len(train_full))
-
-train_idx, val_idx = [], []
-
-num_classes = 10
-val_frac = 0.90
-
-for c in range(num_classes):
-    c_idx = idx[targets == c]
-    np.random.shuffle(c_idx)
-    n_val = int(len(c_idx) * val_frac)
-    val_idx.append(c_idx[:n_val])
-    train_idx.append(c_idx[n_val:])
-
-train_idx = np.concatenate(train_idx)
-val_idx = np.concatenate(val_idx)
-np.random.shuffle(train_idx)
-np.random.shuffle(val_idx)
-
-
-active_set = Subset(train_full, train_idx)
-test_set = Subset(train_full, val_idx)
-
-def get_FMNIST_loaders():
-    train_loader = DataLoader(
-        train_set, batch_size=1024, shuffle=True,
-        num_workers=0, pin_memory=True
-    )
-
-    test_loader = DataLoader(
-        test_set, batch_size=1024, shuffle=True,
-        num_workers=0, pin_memory=True
-    )
-
-    return train_loader, test_loader
-
-
-def partition_iid(y, n_clients, seed=0):
-    rng = np.random.default_rng(seed)
-    idxs = np.arange(len(y))
-    rng.shuffle(idxs)
-    splits = np.array_split(idxs, n_clients)
-    return [s.copy() for s in splits]
-
-trainingIndexs = partition_iid(active_set, Config.NUMBER_OF_AGENTS)
-
-def get_FMNIST_loaders(agentId, local_val_frac):
-    agentIndexs = trainingIndexs[agentId]
-
-    np.random.shuffle(agentIndexs)
-    split_point = int(len(agentIndexs) * (1 - local_val_frac))
-
-    idx_train_local = agentIndexs[:split_point]
-    idx_val_local = agentIndexs[split_point:]
-
-
-    train_set = Subset(active_set, idx_train_local)
-    val_set = Subset(active_set, idx_val_local)
-
-    train_loader = DataLoader(
-        train_set, batch_size=1024, shuffle=True,
-        num_workers=0, pin_memory=True
-    )
-
-    val_loader = DataLoader(val_set, batch_size=1024, shuffle=True, num_workers=0, pin_memory=True)
-
-    test_loader = DataLoader(test_set, batch_size=1024, shuffle=True, num_workers=0, pin_memory=True)
-    return train_loader, val_loader, test_loader
-"""

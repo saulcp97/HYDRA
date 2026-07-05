@@ -1,7 +1,20 @@
+import os
 import torch
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import utils.Similarities as Similarities
+import seaborn as sns
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Final, Iterable, Sequence
+
+from architecture.model import FederatedModel
+
+DEFAULT_FORMAT: Final[str] = "png"
+DEFAULT_DPI: Final[int] = 180
+
 
 
 def get_cmap(n, name='viridis'):
@@ -75,6 +88,28 @@ def loadWeights(path_a: str, path_b: str):
                 if len(A[e].shape) > 1: #Esto elimina el Bias
                     results.append(Similarities.crossEntropy(A[e], B[e]))
 
+
+@dataclass(frozen=True)
+class PlotConfig:
+    """Configuration for figure generation.
+
+    Parameters
+    ----------
+    output_dir : Path
+        Directory where figures will be saved.
+    file_format : str
+        Output image format. Supported values are ``png``, ``pdf``, and ``svg``.
+    dpi : int
+        Dots per inch used for raster output.
+    ci : int
+        Confidence interval level expressed as a percentage. Common values
+        are ``90``, ``95``, and ``99``.
+    """
+
+    output_dir: Path
+    file_format: str = DEFAULT_FORMAT
+    dpi: int = DEFAULT_DPI
+    ci: int = 95
 
 def distDifference(x, y):
     return -abs(x-y)
@@ -397,4 +432,303 @@ def plot_spread_optimized():
     ax.set_ylabel('PCA Dimension 1')
     ax.set_zlabel('PCA Dimension 2')
     
+    plt.show()
+
+
+def prepareData(experiment_name: str = None):
+    if experiment_name is None:
+        experiment_name = Config.experiment_name
+
+    stabilityList = []
+    for agent_id in range(len(Config.AGENT_NAMES)):
+        stabilityList.append([])
+        agent_name = f"scp_{agent_id}"
+        path = f"outputs/{experiment_name}/{agent_name}/expedient.csv"
+
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"No se encontró el archivo de datos: {path}")
+
+        df = pd.read_csv(path)
+        coalitionHOE = df.iloc[:, -Config.GRAPH_GRADE:]
+        for i in range(1, Config.EPOCH_NUM):
+            v1 = coalitionHOE.iloc[i-1]
+            v2 = coalitionHOE.iloc[i]
+            intersection = np.logical_and(v1, v2).sum()
+            union = np.logical_or(v1, v2).sum()
+
+            index = intersection / union if union != 0 else 0
+            stabilityList[agent_id].append(index)
+
+    return stabilityList
+
+
+def plotCoalitionStability(coalition_percentage: float = None, k: int = None):
+    """Dibuja estabilidad de coalición por experimento.
+
+    Modo base (sin parámetros): usa `Config.experiment_name` y muestra los agentes
+    individuales + media + sombra de desviación.
+
+    Modo comparativo (coalition_percentage + k): busca experimentos de cada medida y
+    dibuja la curva media (una curva por medida con su color)."""
+
+    if coalition_percentage is None or k is None:
+        stability_list = prepareData()
+        if not stability_list:
+            raise ValueError("prepareData devolvió lista vacía. Revisa los archivos de entrada.")
+
+        stability_arr = np.asarray(stability_list, dtype=float)
+        n_agents, n_points = stability_arr.shape
+        epochs = np.arange(1, n_points + 1)
+
+        mean_stability = np.nanmean(stability_arr, axis=0)
+        std_stability = np.nanstd(stability_arr, axis=0)
+
+        plt.figure(figsize=(10, 6))
+
+        for agent_id in range(n_agents):
+            plt.plot(epochs, stability_arr[agent_id], color='gray', alpha=0.3, linewidth=1)
+
+        plt.plot(epochs, mean_stability, color='tab:blue', linewidth=2.5, label='Promedio coalición')
+        plt.fill_between(
+            epochs,
+            mean_stability - std_stability,
+            mean_stability + std_stability,
+            color='tab:blue', alpha=0.2,
+            label='±1 STD'
+        )
+
+        plt.title('Stability of Coalitions')
+        plt.xlabel('Round')
+        plt.ylabel('Stability Index (Jaccard)')
+        plt.ylim(0, 1)
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.legend(loc='upper right')
+        plt.tight_layout()
+        plt.show()
+        return
+
+    # Modo comparativo
+    if not (0 <= k < 1000):
+        # k se valida fuera del rango razonable, numero máximo no estricto
+        raise ValueError('k debe ser >= 0 y < NumberExperiments.')
+
+    experiment_definitions = [
+        ('Cosine', 'COSINE_SIMILARITY', 'tab:blue'),
+        ('Euclidean', 'EUCLIDEAN_DISTANCE', 'tab:orange'),
+        ('Normalized Euclidean', 'NORM_EUCLIDEAN', 'tab:green'),
+        ('Manhattan', 'MANHATTAN', 'tab:red'),
+        ('Pearson Correlation', 'PEARSON', 'tab:purple'),
+        ('Angular', 'ANGULAR', 'tab:brown'),
+    ]
+
+    plt.figure(figsize=(11, 7))
+    for label, _, color in experiment_definitions:
+        exp_name = f"{label}_{coalition_percentage}_{k}"
+
+        try:
+            stability_list = prepareData(exp_name)
+        except FileNotFoundError:
+            continue
+
+        stability_arr = np.asarray(stability_list, dtype=float)
+        if stability_arr.size == 0:
+            continue
+
+        mean_stability = np.nanmean(stability_arr, axis=0)
+        std_stability = np.nanstd(stability_arr, axis=0)
+        epochs = np.arange(1, mean_stability.shape[0] + 1)
+
+        plt.plot(epochs, mean_stability, color=color, linewidth=2.5, label=f'{label} ({coalition_percentage}, k={k})')
+        plt.fill_between(epochs,
+                         mean_stability - std_stability,
+                         mean_stability + std_stability,
+                         color=color, alpha=0.2)
+
+    plt.title(f'Comparative of Coalition Stability (coalition={coalition_percentage}, k={k})')
+    plt.xlabel('Round')
+    plt.ylabel('Stability Index (Jaccard)')
+    plt.ylim(0, 1)
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.legend(loc='upper right', bbox_to_anchor=(1.15, 1))
+    plt.tight_layout()
+    plt.show()
+
+
+def _load_epochs_accuracy(experiment_name):
+    if Config.SIMULATION_MODE:
+        raise RuntimeError('plotAccuracy is not supported in SIMULATION_MODE.')
+
+    model = FederatedModel(len(Config.AGENT_NAMES))
+
+    agent_acc = np.zeros((len(Config.AGENT_NAMES), Config.EPOCH_NUM))
+    agent_auc = np.zeros((len(Config.AGENT_NAMES), Config.EPOCH_NUM))
+
+    for epoch in range(Config.EPOCH_NUM):
+        for agentIndex, agent in enumerate(model.agents):
+            agent_dir = os.path.join("outputs", Config.experiment_name, agent.agent_name)
+            
+            # Find the last iteration directory
+            if os.path.exists(agent_dir):
+                iterations = [d for d in os.listdir(agent_dir) if d.startswith("iteration_")]
+                if iterations:
+                    # Sort by iteration number and get the last one
+                    iterations.sort(key=lambda x: int(x.split("_")[1]))
+                    last_iteration = iterations[epoch]
+                    weights_path = os.path.join(agent_dir, last_iteration, "weights.pth")
+                    
+                    # Load the weights if the file exists
+                    if os.path.exists(weights_path):
+                        state_dict = torch.load(weights_path, map_location=agent.nnModel.device if hasattr(agent.nnModel, 'device') else torch.device("cpu"))
+                        agent.nnModel.load_state_dict(state_dict)
+
+        rates, aucs = model.rate_global_scores()
+        print(f"Epoch {epoch} accuracy calculated")
+        agent_acc[:, epoch] = rates
+        agent_auc[:, epoch] = aucs
+    return agent_acc, agent_auc
+
+def plotAccuracy(coalition_percentage: float = None, k: int = None):
+    """Plot accuracy over epochs with the same style as plotCoalitionStability."""
+
+    def _plot_single_experiment(experiment_name, label, color):
+        original_experiment_name = Config.experiment_name
+        Config.experiment_name = experiment_name
+        try:
+            agent_acc, agent_auc = _load_epochs_accuracy(experiment_name)
+        except FileNotFoundError:
+            return False
+        finally:
+            Config.experiment_name = original_experiment_name
+
+        mean_acc = np.nanmean(agent_acc, axis=0)
+        std_acc = np.nanstd(agent_acc, axis=0)
+
+        x = np.arange(1, mean_acc.shape[0] + 1)
+        for agent_idx in range(agent_acc.shape[0]):
+            plt.plot(x, agent_acc[agent_idx], color='gray', alpha=0.2, linewidth=1)
+
+        plt.plot(x, mean_acc, color=color, linewidth=2.5, label=label)
+        plt.fill_between(x, mean_acc - std_acc, mean_acc + std_acc, color=color, alpha=0.2)
+
+        return True
+
+    if coalition_percentage is None or k is None:
+        exp_name = Config.experiment_name
+
+        # Ensure _load_epochs_accuracy reads the correct experiment folder.
+        original_experiment_name = Config.experiment_name
+        Config.experiment_name = exp_name
+        try:
+            agent_acc, agent_auc = _load_epochs_accuracy(exp_name)
+        finally:
+            Config.experiment_name = original_experiment_name
+
+        mean_acc = np.nanmean(agent_acc, axis=0)
+        std_acc = np.nanstd(agent_acc, axis=0)
+        x = np.arange(1, mean_acc.shape[0] + 1)
+
+        plt.figure(figsize=(10, 6))
+        for agent_idx in range(agent_acc.shape[0]):
+            plt.plot(x, agent_acc[agent_idx], color='gray', alpha=0.3, linewidth=1)
+
+        plt.plot(x, mean_acc, color='tab:blue', linewidth=2.5, label='Mean Accuracy')
+        plt.fill_between(x, mean_acc - std_acc, mean_acc + std_acc, color='tab:blue', alpha=0.2, label='±1 STD')
+
+        plt.title(f'Accuracy over epochs: {exp_name}')
+        plt.xlabel('Epoch')
+        plt.ylabel('Test Accuracy')
+        plt.ylim(0, 1)
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.legend(loc='upper right')
+        plt.tight_layout()
+        plt.show()
+        return
+
+    # comparative mode
+    if not (0 <= k < 1000):
+        raise ValueError('k debe ser >= 0 y < NumberExperiments.')
+
+    experiment_definitions = [
+        ('Cosine', 'COSINE_SIMILARITY', 'tab:blue'),
+        ('Euclidean', 'EUCLIDEAN_DISTANCE', 'tab:orange'),
+        ('Normalized Euclidean', 'NORM_EUCLIDEAN', 'tab:green'),
+        ('Manhattan', 'MANHATTAN', 'tab:red'),
+        ('Pearson Correlation', 'PEARSON', 'tab:purple'),
+        ('Angular', 'ANGULAR', 'tab:brown'),
+    ]
+
+    plt.figure(figsize=(11, 7))
+    for label, _, color in experiment_definitions:
+        exp_name = f"{label}_{coalition_percentage}_{k}"
+        if not _plot_single_experiment(exp_name, label, color):
+            continue
+
+    plt.title(f'Comparative Accuracy (coalition={coalition_percentage}, k={k}')
+    plt.xlabel('Epoch')
+    plt.ylabel('Test Accuracy')
+    plt.ylim(0, 1)
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.legend(loc='lower right', bbox_to_anchor=(1.15, 1))
+    plt.tight_layout()
+    plt.show()
+
+def loadAccuracy(measureSimList, coalPercentage):
+    nExperiments = 5
+    agent_auc = np.zeros((len(measureSimList), int(nExperiments*Config.NUMBER_OF_AGENTS)))
+    model = FederatedModel(len(Config.AGENT_NAMES))
+    for j, measureSim in enumerate(measureSimList):
+        measureAcc = []
+        for i in range(nExperiments):
+            exp_name = f"{measureSim}_{coalPercentage}_{i}"
+        
+            for agentIndex, agent in enumerate(model.agents):
+                agent_dir = os.path.join("outputs", exp_name, agent.agent_name)
+                
+                # Find the last iteration directory
+                if os.path.exists(agent_dir):
+                    iterations = [d for d in os.listdir(agent_dir) if d.startswith("iteration_")]
+                    if iterations:
+                        # Sort by iteration number and get the last one
+                        iterations.sort(key=lambda x: int(x.split("_")[1]))
+                        last_iteration = iterations[-1]
+                        weights_path = os.path.join(agent_dir, last_iteration, "weights.pth")
+                        
+                        # Load the weights if the file exists
+                        if os.path.exists(weights_path):
+                            state_dict = torch.load(weights_path, map_location=agent.nnModel.device if hasattr(agent.nnModel, 'device') else torch.device("cpu"))
+                            agent.nnModel.load_state_dict(state_dict)
+                else:
+                    print(f"{agent_dir} doesnt exist")
+            rates, aucs = model.rate_global_scores()
+            measureAcc += rates    
+        agent_auc[j] = measureAcc
+
+    return agent_auc
+
+def accuracyPlotViolin(coalition_percentage):
+    # Supongamos que 'resultados' tiene la accuracy de 10 pruebas
+    experiment_definitions = [
+        ('Cosine', 'COSINE_SIMILARITY', 'tab:blue'),
+        ('Euclidean', 'EUCLIDEAN_DISTANCE', 'tab:orange'),
+        ('Normalized Euclidean', 'NORM_EUCLIDEAN', 'tab:green'),
+        ('Manhattan', 'MANHATTAN', 'tab:red'),
+        ('Pearson Correlation', 'PEARSON', 'tab:purple'),
+        ('Angular', 'ANGULAR', 'tab:brown')
+    ]
+    nombres_modelos = [name for name, sim, color in experiment_definitions]
+    data = loadAccuracy(nombres_modelos, coalition_percentage)
+
+    
+    
+    df = pd.DataFrame(data.T, columns=nombres_modelos)
+
+    print(df)
+
+
+    # 3. Graficamos
+    plt.figure(figsize=(10, 6))
+    sns.violinplot(data=df, palette="muted" ,inner="points") # "inner=points" muestra las 25 muestras reales
+    plt.title(f"Comparative Accuracy (κ={coalition_percentage})")
+    plt.ylabel("Accuracy")
+    plt.ylim(0.5, 1.0) # Ajustamos el límite para ver mejor la accuracy
     plt.show()

@@ -1,4 +1,4 @@
-
+#Singular experiment
 import Config
 
 import random
@@ -29,33 +29,26 @@ from utils.experiments import *
 
 if __name__ == "__main__":
     print("Experimental runs")
+    
+    # For fixed threshold experiments: Config.threshold_similarity
+    # For manage the dynamic percentage (range 0, 1) Config.coalition_percentage
 
-    starter_model = FederatedModel(len(Config.AGENT_NAMES))
-    print("Ammount of agents: ", len(starter_model.agents))
-    for epoch in range(Config.EPOCH_NUM):
-        starter_model.step()
+    set_seed(Config.SIMULATION_SEED)
+    #The case of no coalitions:
+    Config.coalition_percentage = 0.25
+    experimentRows = []
+    
+    combinatoria = []
+    
+    for i in range(2):
+        starter_model = FederatedModel(len(Config.AGENT_NAMES))
+        print("Ammount of agents: ", len(starter_model.agents))
+        for epoch in range(Config.EPOCH_NUM):
+            starter_model.step()
 
+        results = calculateExperimentResults()
 
-    #Experiment interpretation:
+        combinatoria.append([Config.SIMILARITY_MEASURE, Config.coalition_percentage])
+        experimentRows.append(results)
 
-    calculateExperimentResults()
-    import numpy as np
-    rates, aucs = starter_model.rate_global_scores()
-    avgAcuracy = np.mean(rates)
-    stdAccuracy = np.std(rates)
-
-    avgAucs = np.mean(aucs)
-    stdAucs = np.std(aucs)
-    print(f"Average Accuracy {avgAcuracy} +- STD {stdAccuracy}")
-    print(f"Average Area Under the Curve {avgAucs} +- STD {stdAucs}")
-    #plotCoalitionsOfExperimentList()
-    #plotCoalitionsOfExperimentList()
-    if Config.SIMULATION_MODE:
-        #plot_fast_federated_3d()
-        #plot_spread_optimized()
-        pass
-        #plot_MDS_3D_Simulation_csv()
-    else:
-        pass
-        #plot_MDS_3D()
-#f.write('%s\n' %items)
+    experimentResultsCSV(combinatoria, experimentRows, "compromised")

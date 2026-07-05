@@ -1,1 +1,10 @@
-data/FashionMNIST/raw/train-labels-idx1-ubyte.gz
+data/
+paperExperiments/
+plots/
+outputs/
+auxil/
+experimentalImages/
+__pycache__/
+.vscode/
+ignoreBucket/
+imagesPCA/

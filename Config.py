@@ -108,26 +108,18 @@ path_csv = 'Network_Structures/Connection_1.csv'
 network_graph = "graphs/complete.gml"
 USE_FILE_GRAPH = False
 COMPLETED_GRAPH = True
-GRAPH_GRADE = 8 #Normally 8
 GRAPH_SEED = 43
-if USE_FILE_GRAPH:
-    H = nx.read_graphml(network_graph)
-else:
-    if COMPLETED_GRAPH:
-        H = nx.complete_graph(NUMBER_OF_AGENTS)
-        GRAPH_GRADE = NUMBER_OF_AGENTS - 1
-    else:
-        H = nx.random_regular_graph(GRAPH_GRADE, NUMBER_OF_AGENTS, seed=GRAPH_SEED)
-for x in H.nodes:
-    AGENT_NAMES.append(PREFIX+str(x))
-    neigh = list(H.neighbors(x))
-    NEIGHBOURS[AGENT_NAMES[-1]] = [PREFIX+str(y) for y in neigh]
-    AGENT_NICKNAMES[PREFIX+str(x)] = str(x)
 
+#Global variables to use
+H = None #The networkX graph
 Is_Fall_Node = False
-Fall_Node = AGENT_NAMES[3]
+Fall_Node = None
 
+GRAPH_GRADE = 8 #Normally 8
 def calcNewGraph():
+    global H, GRAPH_GRADE, AGENT_NAMES, NEIGHBOURS, AGENT_NICKNAMES
+    global Is_Fall_Node, Fall_Node
+
     if USE_FILE_GRAPH:
         H = nx.read_graphml(network_graph)
     else:
@@ -136,6 +128,7 @@ def calcNewGraph():
             GRAPH_GRADE = NUMBER_OF_AGENTS - 1
         else:
             H = nx.random_regular_graph(GRAPH_GRADE, NUMBER_OF_AGENTS, seed=GRAPH_SEED)
+    
     for x in H.nodes:
         AGENT_NAMES.append(PREFIX+str(x))
         neigh = list(H.neighbors(x))
@@ -144,3 +137,5 @@ def calcNewGraph():
 
     Is_Fall_Node = False
     Fall_Node = AGENT_NAMES[3]
+
+calcNewGraph()

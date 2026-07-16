@@ -17,7 +17,6 @@ import Config
 #    [5, 6, 7, 8, 9] # Agente 2 recibe el resto
 #]
 
-
 dry_bean = fetch_ucirepo(id=602)
 X = dry_bean.data.features
 y = dry_bean.data.targets
@@ -63,6 +62,14 @@ print("class2idx =", class2idx)
 counts = np.bincount(y_train, minlength=num_classes)
 train_dist = {idx2class[i]: int(counts[i]) for i in range(num_classes)}
 print("train_class_distribution =", train_dist)
+
+def prepareData():
+
+
+
+
+
+    pass
 
 # ============================================================
 # 2) Torch datasets

@@ -78,7 +78,7 @@ class FederatedAverageModel(mesa.Model):
         self.federatedAverage()
         self.testResults()
         #And now the changes are saved and the loggers are moved to their own function from here.
-        self.agents.do("logger")
+        #self.agents.do("logger")
 
         print(f"Epoch {self.epoch} completed.")
         self.epoch += 1
@@ -90,5 +90,6 @@ class FederatedAverageModel(mesa.Model):
         aT = agent.accuracyTest()
         aucT = agent.aucTest()
         f1s = agent.f1scoreTest()[0].mean()
-    
-        print(f"Epoch {self.epoch} Accuracy: {aT:.4f}, AUC: {aucT:.4f}, f1Score: {f1s:.4f}")
+        return [aT, aucT, f1s]
+
+        #print(f"Epoch {self.epoch} Accuracy: {aT:.4f}, AUC: {aucT:.4f}, f1Score: {f1s:.4f}")

@@ -3,8 +3,7 @@ paperExperiments/
 plots/
 outputs/
 auxil/
-experimentalImages/
-__pycache__/
-.vscode/
 ignoreBucket/
 imagesPCA/
+experimentalImages/
+**/__pycache__/
